@@ -1,11 +1,22 @@
 include ../common/base.mk
+include $(COMMON)/java.mk
 include $(COMMON)/clojure.mk
 include $(COMMON)/docker.mk
+include $(COMMON)/native.mk
 
 LIBYAMLSCRIPT_JAR_PATH := target/libyamlscript-$(YS_VERSION)-standalone.jar
 
+LYS_SOURCES := \
+  src/libyamlscript/core.clj \
+	src/libyamlscript/API.java \
+
+HEADERS := \
+  $(LIBYAMLSCRIPT_DIR)/graal_isolate.h \
+  $(LIBYAMLSCRIPT_SO_NAME).$(YS_VERSION).h \
+
 BUILD_TARGETS := \
   $(LIBYAMLSCRIPT_SO_FQNP) \
+  $(HEADERS) \
 
 # Avoid rebuild in ephemerally created Docker container.
 ifdef DOCKERENV
@@ -17,11 +28,16 @@ endif
 #------------------------------------------------------------------------------
 build:: $(BUILD_TARGETS)
 
-install:: $(LIBYAMLSCRIPT_SO_FQNP)
+jar: $(LIBYAMLSCRIPT_JAR_PATH)
+
+install:: $(BUILD_TARGETS)
+	mkdir -p $(PREFIX)/include/
+	install -m 644 $(HEADERS) $(PREFIX)/include/
 	mkdir -p $(PREFIX)/lib/
 	install -m 644 $< $(PREFIX)/lib/
 	ln -fs $(notdir $<) $(PREFIX)/lib/$(notdir $(LIBYAMLSCRIPT_SO_BASE))
 	ln -fs $(notdir $<) $(PREFIX)/lib/$(notdir $(LIBYAMLSCRIPT_SO_APIP))
+	ln -fs $(notdir $<) $(PREFIX)/lib/$(notdir $(LIBYAMLSCRIPT_SO_VERS))
 
 realclean::
 	$(RM) -r lib/
@@ -32,7 +48,7 @@ test:: $(LIBYAMLSCRIPT_SO_FQNP)
 
 repl-deps:: $(LIBYAMLSCRIPT_JAR_PATH)
 
-$(LIBYAMLSCRIPT_SO_FQNP): $(GRAALVM_INSTALLED) $(LIBYAMLSCRIPT_JAR_PATH)
+$(LIBYAMLSCRIPT_SO_FQNP): $(LIBYAMLSCRIPT_JAR_PATH)
 ifneq (true,$(LIBZ))
 	$(error *** The 'libz.$(SO)' library is required by native-image but not installed)
 endif
@@ -40,27 +56,15 @@ endif
 	# The next command may take a long time (a minute or so)
 	$(TIME) \
 	native-image \
-	    -O$(GRAALVM_O) \
-	    --verbose \
-	    --native-image-info \
-	    --no-fallback \
+	  $(NATIVE_OPTS) \
 	\
-	    --initialize-at-build-time \
-	    --enable-preview \
-	\
-	    -H:ReflectionConfigurationFiles=reflection.json \
-	    -H:+ReportExceptionStackTraces \
-	    -H:IncludeResources=SCI_VERSION \
-	    -H:Log=registerResource: \
-	    -J-Dclojure.spec.skip-macros=true \
-	    -J-Dclojure.compiler.direct-linking=true \
-	    -J-Xmx3g \
-	\
-	    --shared \
-	    -jar $(LIBYAMLSCRIPT_JAR_PATH) \
-	    -H:Name=$(LIBYAMLSCRIPT_SO_NAME)
+	  --shared \
+	  -jar $< \
+	  -o $(LIBYAMLSCRIPT_SO_NAME)
 	mv $(LIBYAMLSCRIPT_SO_BASE) $@
+	mv $(LIBYAMLSCRIPT_SO_NAME).h $(LIBYAMLSCRIPT_SO_NAME).$(YS_VERSION).h
 	ln -fs $(notdir $@) $(LIBYAMLSCRIPT_SO_APIP)
+	ln -fs $(notdir $@) $(LIBYAMLSCRIPT_SO_VERS)
 	ln -fs $(notdir $@) $(LIBYAMLSCRIPT_SO_BASE)
 
 ifeq (true,$(IS_ROOT))
@@ -69,7 +73,7 @@ ifeq (true,$(IS_ROOT))
 	$(error *** YAMLScript 'make build' must be run as non-root user)
 endif
 else
-$(LIBYAMLSCRIPT_JAR_PATH): $(LEIN) $(YAMLSCRIPT_LANG_INSTALLED)
+$(LIBYAMLSCRIPT_JAR_PATH): $(LEIN) $(JAVA_INSTALLED) $(YAMLSCRIPT_CORE_INSTALLED) $(LYS_SOURCES)
 	$< uberjar
 endif
 
@@ -83,4 +87,4 @@ Dockerfile:: $(COMMON) Makefile
 	  $</docker-copy-project-deps.dockerfile \
 	  $</docker-deps-clojure.dockerfile \
 	  $</docker-apt-dev.dockerfile \
-		> $@
+	  > $@

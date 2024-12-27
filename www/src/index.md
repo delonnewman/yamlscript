@@ -3,214 +3,95 @@ layout: home
 title: YAMLScript.org
 ---
 
-**YAMLScript — Program in YAML**
+<p style="text-align: center; font-weight: bold">Program in YAML — Code is
+Data</p>
 
-YAMLScript is a functional programming language whose syntax is encoded in
-YAML.
-YAMLScript can be used for writing new software applications and libraries.
+**YAMLScript** is a new functional programming language with a clean syntax that
+is also 100% valid [YAML](https://yaml.org).
+It was designed to be easily embedded into existing YAML files in order to
+provide the logic, interpolation and data transformation capabilities that many
+YAML users need.
+Created by YAML inventor and lead maintainer, Ingy döt Net, YAMLScript solves
+these needs beautifully for all YAML users and uses.
 
-Here's an example of a YAMLScript program called `hello.ys`:
+> YAMLScript is now available as a programming language learning track on
+**[Exercism](https://exercism.org/tracks/yamlscript)**.
+It's a great way to learn YAMLScript and get feedback from experienced mentors.
+Check it out!
 
-```yaml
-!yamlscript/v0
+If you work with apps and frameworks that use YAML for configuration, you can
+simplify your complex YAML files using YAMLScript, even if the app or framework
+does not support it natively.
+YAMLScript lets you include data from external files and other sources, make use
+of hundreds of existing standard functions, and even define your own variables
+and functions.
+You can filter, map, merge, reduce, generate, concatenate, interpolate and
+manipulate your data as you wish.
+YAMLScript provides these things with syntax that is minimal and unobtrusive,
+keeping your clean YAML data clean.
 
-defn main(&[name]):
-  greet: name || "world"
+> Slides and information from Ingy's [KubeCon 2024 talk](
+https://www.youtube.com/watch?v=Cdi3Q4Wrt48)
+are available [here](https://yamlscript.org/kubeys24).
+The highlight was [HelmYS](https://github.com/kubeys/helmys) a new Helm
+post-renderer that lets you template Helm charts with YAMLScript (which is
+actual YAML).
 
-defn greet(name):
-  say: "Hello, $name!"
-```
+Like many new languages, YAMLScript was built over an existing robust language,
+[Clojure](https://clojure.org), which in turn was built over
+[Java](https://java.com).
+The power of Clojure and Java is available to YAMLScript users via the
+YAMLScript runtime interpreter, `ys`.
+However, the `ys` command is compiled into a single standalone native binary
+executable file.
+This means that <u>No Java or JVM</u> installation is required to use
+YAMLScript, and startup/execution speed is very fast.
 
-You can run this program from the command line:
+YAMLScript also produces the `libyamlscript.so` shared library.
+It has [binding modules for 10 programming languages](/doc/bindings) including
+Go, JavaScript, Python and Rust, with many more on the way.
+These modules can be used in your programs to load normal YAML files as well as
+YAMLScript enhanced ones.
 
-```bash
-$ ys hello.ys
-Hello, world!
-$ ys hello.ys Bob
-Hello, Bob!
-```
+There are many ways to use YAMLScript:
 
-YAMLScript can also be used in plain YAML files to add dynamic operations at any
-level.
-Here's an example of using YAMLScript in a YAML configuration file called
-`db-config.yaml`:
-
-```yaml
-!yamlscript/v0
-
-base =:
-  ys::yaml.load-file: "db-defaults.yaml"
-  # host: localhost
-  # port: 12345
-  # user: app
-  # password: secret
-
-=>::
-  development::
-    merge base::
-      user: dev
-      password: devsecret
-
-  staging::
-    merge base::
-      host: staging-db.myapp.com
-
-  production::
-    merge base::
-      host: prod-db.myapp.com
-      user: prod
-      password: prodsecret
-```
-
-From the command line, run:
-
-```bash
-$ ys --load db-config.yaml
-[{"development":
-  {"host":"localhost", "port":12345, "user":"dev", "password":"devsecret"}},
- {"staging":
-  {"host":"staging-db.myapp.com", "port":12345, "user":"app", "password":"secret"}},
- {"production":
-  {"host":"prod-db.myapp.com", "port":12345, "user":"prod", "password": "prodsecret"}}]
-```
-
-By default YAMLScript outputs JSON, but it can also output YAML by running:
-
-```bash
-$ ys --load --yaml db-config.yaml
-```
-
-You can use YAMLScript as a regular YAML loader module in a programming language
-like Python:
-
-```python
-import yamlscript
-ys = yamlscript.YAMLScript()
-text = open("db-config.yaml").read()
-data = ys.load(text)
-```
-
-It loads the YAML data file just like PyYAML would, but with these added
-benefits:
-
-* YAMLScript modules have the same API and work exactly the same in any
-  programming language.
-* YAMLScript uses the latest YAML 1.2 specification, which eliminates many of
-  the complaints people often have about YAML.
-* You can add dynamic operations to your YAML file by starting the file with a
-  `!yamlscript/v0` tag.
+* Simplify your existing YAML configs
+  * Works great with CI/CD, Helm, Docker, Ansible, etc.
+  * Check out [HelmYS](https://github.com/kubeys/helmys), a tool for using
+    YAMLScript in Kubernetes Helm chart templates painlessly.
+* [Load YAMLScript (or YAML) in your programs](doc/bindings)
+  * Available in 10 programming languages (and counting)
+* Program in YAMLScript
+  * Learn how at [Exercism](https://exercism.org/tracks/yamlscript)
+* [Script Automation with YAMLScript](doc/examples)
+  * Many used in the [YAMLScript repository](https://github.com/yaml/yamlscript)
+* [Compile YAMLScript to binary executables](doc/binary)
+  * Fast, standalone, no-source software distribution
+* [Query and Transform YAML (and JSON) data](doc/query)
+  * Use the `ys` command line tool similar to `jq` or `yq`
 
 
-## Installing `ys` - The YAMLScript Command Line Tool
+----
 
-The `ys` command line tool is the easiest way to get started with YAMLScript.
+## YAMLScript Resources
 
-You can install the [latest release](
-https://github.com/yaml/yamlscript/releases) (currently on Linux and macOS for
-both `x86_64` and `aarch64`) with:
+* [Web Site](https://yamlscript.org)
+* [Documentation](https://yamlscript.org/doc)
+* [Matrix Chat](https://matrix.to/#/#chat-yamlscript:yaml.io)
+* [Slack Chat](https://clojurians.slack.com/archives/yamlscript)
+* [Blog](https://yamlscript.org/blog)
+* [GitHub Repository](https://github.com/yaml/yamlscript)
+* [Discussions](https://github.com/yaml/yamlscript/discussions)
+* [Issues](https://github.com/yaml/yamlscript/issues)
 
-```bash
-$ curl https://yamlscript.org/install | PREFIX=~/.local bash
-```
+----
 
-Make sure `~/.local/bin` is in your `PATH` environment variable.
+## YAMLScript Links
 
-> The default `PREFIX` is `/usr/local`, which likely requires `sudo bash` to run
-the above command.
+* Nov 2024 [KubeCon Talk and Info](https://yamlscript.org/kubeys24)
+* Jun 2024 [TPRC Talk](https://www.youtube.com/watch?v=RFIukRdFe1o)
+* Apr 2024 [OSS/NA Talk](https://www.youtube.com/watch?v=u-OCEHNdwlU)
+* Mar 2024 [TheNewStack Article](https://thenewstack.io/with-yamlscript-yaml-becomes-a-proper-programming-language/)
+* Mar 2024 [Seajure Talk](https://www.youtube.com/watch?v=GajOBwBcFyA)
 
-Or you can install from source:
-
-```bash
-$ git clone https://github.com/yaml/yamlscript
-$ cd yamlscript
-$ make build
-$ make install PREFIX=~/.local
-$ export PATH=~/.local/bin:$PATH
-```
-
-The install process has the very minimal dependencies of `git`, `make`, `curl`,
-and `bash`.
-(The `libz-dev` package is also required on Linux.)
-
-Test your new `ys` installation by running:
-
-```text
-ys - The YAMLScript (YS) Command Line Tool
-
-Usage: ys [options] [file]
-
-Options:
-  -r, --run                Compile and evaluate a YAMLScript file (default)
-  -l, --load               Output the evaluated YAMLScript value
-  -e, --eval YSEXPR        Evaluate a YAMLScript expression
-
-  -c, --compile            Compile YAMLScript to Clojure
-  -C, --native             Compile to a native binary executable
-      --clj                Treat input as Clojure code
-
-  -m, --mode MODE          Add a mode tag: code, data, or bare (only for --eval/-e)
-  -p, --print              Print the result of --run in code mode
-
-  -o, --output FILE        Output file for --load, --compile or --native
-  -t, --to FORMAT          Output format for --load
-
-  -J, --json               Output JSON for --load
-  -Y, --yaml               Output YAML for --load
-  -E, --edn                Output EDN for --load
-
-  -x, --debug-stage STAGE  Display the result of stage(s)
-  -X                       Same as '-x all'
-  -S, --stack-trace        Print full stack trace for errors
-
-      --version            Print version and exit
-  -h, --help               Print this help and exit
-```
-
-or:
-
-```text
-$ ys --version
-YAMLScript 0.1.36
-```
-
-## Language Design
-
-YAMLScript code compiles to Clojure code and then is evaluated by a Clojure
-runtime engine.
-This means that YAMLScript is a very complete language from the get-go.
-
-Clojure is a Lisp dialect that runs on the JVM, however YAMLScript is not run on
-the JVM.
-No Java or JVM installation is used to run YAMLScript programs.
-
-The YAMLScript compiler is written in Clojure and then compiled to a native
-machine code binary using GraalVM.
-It is standalone and quite fast.
-
-It is also compiled into a native shared library that can be embedded into
-almost any programming language.
-YAMLScript intends to ship language bindings for (at least) 42 popular
-programming languages.
-
-YAMLScript syntax uses a combination of YAML structure and Clojure Lisp syntaxes
-combined together.
-The Lisp parts can use variants that make it feel more like Python or Ruby,
-instead of a Lisp.
-
-How a YAMLScript program is syntactically styled is very much up to the
-programmer.
-She can go Full Lisp or full YAML, but most likely will use a combination of
-the two will end up reading the best.
-
-
-## Status
-
-YAMLScript is currently in the early stages of development, but it is already
-a working language.
-
-Read the [YAMLScript Advent 2023](https://yamlscript.org/posts/advent-2023/)
-posts for lots of explanations and examples of YAMLScript in action.
-
-<!--
-See the [YAMLScript Docs](https://yamlscript.org/doc/) for more information.
--->
+----

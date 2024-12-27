@@ -1,0 +1,98 @@
+# Used by util/version-bump to update versions in repo
+
+!yamlscript/v0
+
+v-old =: ENV.YS_RELEASE_VERSION_OLD ||
+  die("'YS_RELEASE_VERSION_OLD' env var not defined")
+v-new =: ENV.YS_RELEASE_VERSION_NEW ||
+  die("'YS_RELEASE_VERSION_NEW' env var not defined")
+
+vp =: '0\.1\.[0-9]+'
+vo =: v-old.str/replace(/\./ '\\.')
+
+
+=>::
+#------------------------------------------------------------------------------
+# These files can change all occurences of old version to new version.
+#------------------------------------------------------------------------------
+- vers:: v-new
+  all: true
+  bump:
+  - regx:: "()${vp}()"
+    file:
+    - Meta
+    - ReadMe.md
+    - common/install.mk
+    - common/release.md
+    # Don't update common/vars.mk
+    # - common/vars.mk
+    - core/src/yamlscript/runtime.clj
+    - doc/run-ys.md
+    - doc/ys.md
+    - go/ReadMe.md
+    - go/doc/readme.md
+    - go/yamlscript.go
+    - java/Makefile
+    - java/src/main/java/org/yamlscript/yamlscript/YAMLScript.java
+    - julia/src/libyamlscript.jl
+    - nodejs/lib/yamlscript/index.js
+    - perl-alien/alienfile
+    - perl-alien/lib/Alien/YAMLScript.pm
+    - perl/lib/YAMLScript.pm
+    - python/lib/yamlscript/__init__.py
+    - raku/lib/YAMLScript.rakumod
+    - ruby/lib/yamlscript.rb
+    - ruby/lib/yamlscript/version.rb
+    - rust/src/lib.rs
+    - util/YS
+    - www/src/index.md
+    - www/src/install
+    - www/src/run-ys
+    - www/src/posts/advent-2023/dec-07.md
+    - ys/src/yamlscript/cli.clj
+    - ys/test/cli-usage.t
+
+#------------------------------------------------------------------------------
+# These changes are very specific to not accidentally but something wrongly.
+#------------------------------------------------------------------------------
+- vers:: v-new
+  bump:
+  - regx:: "(yamlscript.*)${vp}(.*)"
+    file:
+    - clojure/deps.edn
+    - clojure/project.clj
+    - common/project.clj
+    - core/project.clj
+    - libyamlscript/deps.edn
+    - libyamlscript/project.clj
+    - ys/deps.edn
+    - ys/project.clj
+    - ys/share/ys-0.bash
+
+  - regx:: "(yamlscript\/core.*)${vp}(.*)"
+    file:
+    - libyamlscript/project.clj
+    - ys/project.clj
+
+  - regx:: "(YAMLScript.*)${vp}(.*)"
+    file:
+    - www/src/posts/advent-2023/dec-05.md
+
+  - regx:: "(yamlscript\/yamlscript.*)${vp}(.*)"
+    file:
+    - clojure/project.clj
+
+  - regx:: "(Alien::YAMLScript:.*)${vp}(.*)"
+    file:
+    - perl/Meta
+
+  - regx:: "(version.*)${vp}(.*)"
+    file:
+    - nodejs/package.json
+    - java/pom.xml
+    - julia/Project.toml
+    - perl/Meta
+    - perl-alien/Meta
+    - python/setup.py
+    - raku/META6.json
+    - rust/Cargo.toml

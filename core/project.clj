@@ -1,8 +1,8 @@
 ;; This code is licensed under MIT license (See License for details)
 ;; Copyright 2023-2024 Ingy dot Net
 
-(defproject yamlscript/core "0.1.36"
-  :description "Program in YAML"
+(defproject yamlscript/core "0.1.87"
+  :description "Program in YAML — Code is Data"
 
   :url "https://github.com/yaml/yamlscript"
 
@@ -17,11 +17,17 @@
    :dir ".."}
 
   :dependencies
-  [[org.clojure/clojure "1.11.1"]
+  [[org.clojure/clojure "1.12.0"]
    [org.clojure/data.json "2.4.0"]
    [clj-commons/clj-yaml "1.0.27"]
+   [org.flatland/ordered "1.15.11"]
    [org.snakeyaml/snakeyaml-engine "2.7"]
-   [org.babashka/sci "0.8.41"]]
+   [babashka/babashka.pods "0.2.0"]
+   [babashka/fs "0.5.20"]
+   [babashka/process "0.5.21"]
+   [org.babashka/http-client "0.3.11"]
+   [org.babashka/sci "0.8.41"]
+   [org.clojure/tools.cli "1.0.219"]]
 
   :plugins
   [[lein-exec "0.3.7"]
@@ -31,7 +37,7 @@
 
   :prep-tasks [["lein2deps" "--write-file" "deps.edn" "--print" "false"]]
 
-  :repositories [["public-github" {:url "git://github.com"}]]
+  :repositories [["public-github" {:url "https://github.com"}]]
 
   :global-vars {*warn-on-reflection* true}
 

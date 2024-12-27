@@ -1,37 +1,60 @@
+<!-- DO NOT EDIT — THIS FILE WAS GENERATED -->
+
 YAMLScript
 ==========
 
-Program in YAML
+Add Logic to Your YAML Files
 
 
 ## Synopsis
 
+Load `file.yaml` with YAMLScript:
 ```yaml
-#!/usr/bin/env ys-0
+!yamlscript/v0/
 
-defn main(name):
-  say: "Hello, $name!"
+# Get data from external sources:
+names-url =:
+  "https://raw.githubusercontent.com/dominictarr/\
+   random-name/master/first-names.json"
+
+name-list =: &first-names json/load(curl(names-url))
+
+# Data object with literal keys and generated values:
+name:: rand-nth(*first-names)
+aka:: name-list.rand-nth()
+age:: &num 2 * 3 * 7
+color:: &hue qw(red green blue yellow)
+          .shuffle()
+          .first()
+title:: "$(*num) shades of $(*hue)."
+```
+
+and get:
+```json
+{
+  "name": "Dolores",
+  "aka": "Anita",
+  "age": 42,
+  "color": "green",
+  "title": "42 shades of green."
+}
 ```
 
 
 ## Description
 
-YAMLScript is a functional programming language with a stylized YAML syntax.
+[YAMLScript](https://yamlscript.org) is a functional programming language with a
+clean YAML syntax.
 
-YAMLScript can be used for:
+YAMLScript can be used for enhancing ordinary [YAML](https://yaml.org) files
+with functional operations, such as:
 
-* Writing new programs and applications
-  * Run with `ys file.ys`
-  * Or compile to binary executable with `ys -C file.ys`
-* Enhancing ordinary YAML files with new functional magics
-  * Import parts of other YAML files to any node
-  * String interpolation including function calls
-  * Any other functionality you can dream up!
-* Writing reusable shared libraries
-  * High level code instead of C
-  * Bindable to almost any programming language
+* Import (parts of) other YAML files to any node
+* String interpolation including function calls
+* Data transforms including ones defined by you
 
-YAMLScript should be a drop-in replacement for your YAML loader!
+This YAMLScript library should be a drop-in replacement for your current YAML
+loader!
 
 Most existing YAML files are already valid YAMLScript files.
 This means that YAMLScript works as a normal YAML loader, but can also evaluate
@@ -47,10 +70,19 @@ YAMLScript is compiled to a native shared library (`libyamlscript.so`) that can
 be used by any programming language that can load shared libraries.
 
 To see the Clojure code that YAMLScript compiles to, you can use the YAMLScript
-command line utility, `ys`, to run:
+CLI binary `ys` to run:
 
 ```text
 $ ys --compile file.ys
+(let
+ [names-url "https://raw.githubusercontent.com/dominictarr/random-name/master/first-names.json"
+  name-list (_& 'first-names (json/load (curl names-url)))]
+ (%
+  "name" (rand-nth (_** 'first-names))
+  "aka" (rand-nth name-list)
+  "age" (_& 'num (mul+ 2 3 7))
+  "color" (_& 'hue (first (shuffle (qw red green blue yellow))))
+  "title" (str (_** 'num) " shades of " (_** 'hue) ".")))
 ```
 
 
@@ -106,26 +138,29 @@ but you will need to have a system install of `libyamlscript.so`.
 One simple way to do that is with:
 
 ```bash
-$ curl https://yamlscript.org/install | sudo PREFIX=/usr/local bash
+$ curl https://yamlscript.org/install | bash
 ```
 
 > Note: The above command will install the latest version of the YAMLScript
 command line utility, `ys`, and the shared library, `libyamlscript.so`, into
-`/usr/local/bin` and `/usr/local/lib` respectively.
+`~/local/bin` and `~/.local/lib` respectively.
 
 See https://github.com/yaml/yamlscript?#installing-yamlscript for more info.
 
 
 ## See Also
 
-* [The YAMLScript Web Site](https://yamlscript.org)
-* [The YAMLScript Blog](https://yamlscript.org/blog)
-* [The YAMLScript Source Code](https://github.com/yaml/yamlscript)
+* [YAMLScript Web Site](https://yamlscript.org)
+* [YAMLScript Blog](https://yamlscript.org/blog)
+* [YAMLScript Source Code](https://github.com/yaml/yamlscript)
+* [YAMLScript Samples](https://github.com/yaml/yamlscript/tree/main/sample)
+* [YAMLScript Programs](https://rosettacode.org/wiki/Category:YAMLScript)
 * [YAML](https://yaml.org)
 * [Clojure](https://clojure.org)
 
 
 ## Authors
+
 
 * [Ingy döt Net](https://github.com/ingydotnet)
 

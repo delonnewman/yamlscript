@@ -6,7 +6,9 @@
 
 (ns yamlscript.composer
   (:require
-   [yamlscript.debug :refer [www]]))
+   [yamlscript.common])
+  (:refer-clojure))
+
 (comment
   [;
    :%  ; block mapping
@@ -32,7 +34,7 @@
   "Compose YAML parse events into a tree."
   [events]
   (if (seq events)
-    (->>
+    (->
       events
       compose-events
       first)
@@ -110,5 +112,4 @@
     "=ALI" (compose-alias events)))
 
 (comment
-  www
   )

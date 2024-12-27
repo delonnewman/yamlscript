@@ -4,14 +4,17 @@
 (ns yamlscript.test-runner
   (:require
    [yamltest.core :as test]
-   [yamlscript.compiler-test]
-   [yamlscript.parser-test]
-   [yamlscript.composer-test]
-   [yamlscript.resolver-test]
+   [yamlscript.global :as global]
    [yamlscript.builder-test]
-   [yamlscript.transformer-test]
+   [yamlscript.compiler-test]
+   [yamlscript.composer-test]
    [yamlscript.constructor-test]
-   [yamlscript.printer-test]))
+   [yamlscript.parser-test]
+   [yamlscript.printer-test]
+   [yamlscript.resolver-test]
+   [yamlscript.transformer-test]))
+
+(swap! global/opts assoc :unordered true)
 
 (comment
   ;; Pick a namespace to run tests in (:all will always run all tests):

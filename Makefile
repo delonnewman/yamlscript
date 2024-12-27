@@ -1,28 +1,50 @@
 SHELL := bash
 
 ROOT := $(shell \
-	cd '$(abspath $(dir $(lastword $(MAKEFILE_LIST))))' && pwd -P)
+    cd '$(abspath $(dir $(lastword $(MAKEFILE_LIST))))' && pwd -P)
+
+export ROOT
 
 include $(ROOT)/common/vars.mk
+include $(ROOT)/common/java.mk
 
-DIRS := \
-    core \
-    libyamlscript \
+BINDINGS := \
+    clojure \
+    go \
+    java \
+    julia \
+    nodejs \
     perl \
     perl-alien \
     python \
     raku \
     ruby \
     rust \
+
+DIRS := \
+    core \
+    libyamlscript \
+    $(BINDINGS) \
     ys \
 
 BUILD_DIRS := \
-		libyamlscript \
-		ys \
+    libyamlscript \
+    go \
+    nodejs \
+    python \
+    ruby \
+    rust \
+    ys \
+
+INSTALL_DIRS := \
+    libyamlscript \
+    ys \
 
 BUILD := $(BUILD_DIRS:%=build-%)
-INSTALL := $(BUILD_DIRS:%=install-%)
+BUILD_DOC := $(BINDINGS:%=build-doc-%)
+INSTALL := $(INSTALL_DIRS:%=install-%)
 TEST := $(DIRS:%=test-%)
+TEST_BINDINGS := $(BINDINGS:%=test-%)
 PUBLISH := $(DIRS:%=publish-%)
 CLEAN := $(DIRS:%=clean-%)
 REALCLEAN := $(DIRS:%=realclean-%)
@@ -31,26 +53,79 @@ DOCKER_BUILD := $(DIRS:%=docker-build-%)
 DOCKER_TEST := $(DIRS:%=docker-test-%)
 DOCKER_SHELL := $(DIRS:%=docker-shell-%)
 
+export HEAD := $(shell git rev-parse HEAD)
+
+LYS_JAR_RELEASE := libyamlscript-$(YS_VERSION)-standalone.jar
+YS_JAR_RELEASE := yamlscript.cli-$(YS_VERSION)-standalone.jar
+LYS_JAR_PATH := libyamlscript/target/libyamlscript-$(YS_VERSION)-standalone.jar
+YS_JAR_PATH := ys/target/uberjar/yamlscript.cli-$(YS_VERSION)-SNAPSHOT-standalone.jar
+
 YS_RELEASE := $(RELEASE_YS_NAME).tar.xz
 LYS_RELEASE := $(RELEASE_LYS_NAME).tar.xz
 
+JAR_ASSETS := \
+    $(LYS_JAR_RELEASE) \
+    $(YS_JAR_RELEASE) \
+
+ifndef JAR_ONLY
 RELEASE_ASSETS := \
-    $(YS_RELEASE) \
     $(LYS_RELEASE) \
+    $(YS_RELEASE)
+endif
+
+RELEASE_ASSETS += \
+    $(JAR_ASSETS) \
+
+RELEASE_LOG := release-$n.log
 
 ifdef PREFIX
 override PREFIX := $(abspath $(PREFIX))
 endif
 
-default:
+ifdef v
+export YS_RELEASE_VERBOSE := 1
+endif
+ifdef d
+export YS_RELEASE_DRYRUN := 1
+endif
+ifdef l
+export YS_RELEASE_LAST_STEP := $l
+endif
+ifdef n
+export YS_RELEASE_VERSION_NEW := $n
+endif
+ifdef o
+export YS_OLD_TAG := $o
+export YS_RELEASE_VERSION_OLD := $o
+endif
+
+default::
+
+env:
+	@env | sort | less -FRX
 
 chown:
 	sudo chown -R $(USER):$(USER) .
+
+ys-files:
+	@( \
+	  find . -name '*.ys' | cut -c3-; \
+	  ag -asl --hidden '^#!/usr/bin/env ys-0$$' .; \
+	) | grep -Ev '(^note/)' | \
+	LC_ALL=C sort | uniq
+
+nrepl nrepl-stop nrepl+:
+	$(MAKE) -C core $@
 
 $(BUILD):
 build: $(BUILD)
 build-%: %
 	$(MAKE) -C $< build
+
+$(BUILD_DOC):
+build-doc: $(BUILD_DOC)
+build-doc-%: %
+	$(MAKE) -C $< build-doc
 
 $(INSTALL):
 install: $(INSTALL)
@@ -61,6 +136,8 @@ $(TEST):
 test: $(TEST)
 	@echo
 	@echo 'ALL TESTS PASSED!'
+test-core:
+	$(MAKE) -C core test v=$v
 test-ys:
 	$(MAKE) -C ys test-all v=$v GRAALVM_O=b
 test-%: %
@@ -68,9 +145,59 @@ test-%: %
 test-unit:
 	$(MAKE) -C core test v=$v
 	$(MAKE) -C ys test v=$v
+test-bindings: $(TEST_BINDINGS)
 
-release: release-clean $(RELEASE_ASSETS)
-	publish-release $(RELEASE_ASSETS)
+serve publish:
+	$(MAKE) -C www $@
+
+ifdef s
+release: release-check release-yamlscript
+else
+release: release-check realclean release-pull release-yamlscript
+endif
+
+release-check:
+ifneq (main,$(shell git rev-parse --abbrev-ref HEAD))
+	$(error Must be on branch 'main' to release)
+endif
+ifndef YS_GH_TOKEN
+	$(error YAMLScript release requires YS_GH_TOKEN to be set)
+endif
+ifndef YS_GH_USER
+	$(error YAMLScript release requires YS_GH_USER to be set)
+endif
+ifndef d
+ifndef RELEASE_ID
+ifndef YS_RELEASE_VERSION_OLD
+	$(error 'make release' needs the 'o' variable set to the old version)
+endif
+ifndef YS_RELEASE_VERSION_NEW
+	$(error 'make release' needs the 'n' variable set to the new version)
+endif
+ifeq (,$(shell which yarn))
+	$(error 'make release' needs 'yarn' installed)
+endif
+endif
+endif
+
+release-pull:
+ifndef d
+	( \
+	  set -ex; \
+	  git pull --rebase; \
+	  if [[ $$(git rev-parse HEAD) != $$HEAD ]]; then \
+	    echo "Pulled new changes. Please re-run 'make release'."; \
+	    exit 1; \
+	  fi \
+	)
+endif
+
+release-yamlscript: $(BUILD_BIN_YS)
+	(time $< $(ROOT)/util/release-yamlscript $o $n $s) 2>&1 | \
+	  tee -a $(RELEASE_LOG)
+
+release-assets: $(RELEASE_ASSETS)
+	release-assets $^
 
 release-build: release-build-ys release-build-libyamlscript
 
@@ -78,12 +205,11 @@ release-build-ys: $(YS_RELEASE)
 
 release-build-libyamlscript: $(LYS_RELEASE)
 
-release-clean:
-	$(RM) -r libyamlscript/lib ys/bin ~/.m2/repository/yamlscript
+jars: $(JAR_ASSETS)
 
-$(RELEASE_YS_NAME).tar.xz: $(RELEASE_YS_NAME)
+$(YS_RELEASE): $(RELEASE_YS_NAME)
 	mkdir -p $<
-	cp -pP ys/bin/ys* $</
+	cp -pPR ys/bin/ys* $</
 	cp common/install.mk $</Makefile
 ifeq (true,$(IS_MACOS))
 	$(TIME) tar -J -cf $@ $<
@@ -91,9 +217,9 @@ else
 	$(TIME) tar -I'xz -0' -cf $@ $<
 endif
 
-$(RELEASE_LYS_NAME).tar.xz: $(RELEASE_LYS_NAME)
+$(LYS_RELEASE): $(RELEASE_LYS_NAME)
 	mkdir -p $<
-	cp -pP libyamlscript/lib/libyamlscript.$(SO)* $</
+	cp -pPR libyamlscript/lib/libyamlscript.$(SO)* $</
 	cp common/install.mk $</Makefile
 ifeq (true,$(IS_MACOS))
 	$(TIME) tar -J -cf $@ $<
@@ -105,26 +231,45 @@ $(RELEASE_YS_NAME): build-ys
 
 $(RELEASE_LYS_NAME): build-libyamlscript
 
+$(LYS_JAR_RELEASE): $(LYS_JAR_PATH)
+	cp $< $@
+
+$(YS_JAR_RELEASE): $(YS_JAR_PATH)
+	cp $< $@
+
+$(LYS_JAR_PATH):
+	$(MAKE) -C libyamlscript jar
+
+$(YS_JAR_PATH):
+	$(MAKE) -C ys jar
+
 delete-tag:
 	-git tag --delete $(YS_VERSION)
 	-git push --delete origin $(YS_VERSION)
 
-bump:
-	version-bump
+bump: $(BUILD_BIN_YS)
+	$< $(ROOT)/util/version-bump
 
 $(CLEAN):
-clean: $(CLEAN) release-clean
-	$(RM) -r libyamlscript-0* ys-0*
+clean: $(CLEAN)
+	$(RM) -r libyamlscript/lib ys/bin $(MAVEN_REPOSITORY)/yamlscript
+	$(RM) -r libyamlscript-0* ys-0* yamlscript.cli-*.jar
 	$(RM) -r sample/advent/hearsay-rust/target/
-	$(RM) EVAL
+	$(RM) -r homebrew-yamlscript
+	$(RM) NO-NAME release*.log
 clean-%: %
 	$(MAKE) -C $< clean
 
+ifdef d
+realclean:
+else
 $(REALCLEAN):
 realclean: clean $(REALCLEAN)
 	$(MAKE) -C www $@
+	$(RM) release-*
 realclean-%: %
 	$(MAKE) -C $< realclean
+endif
 
 $(DISTCLEAN):
 distclean: realclean $(DISTCLEAN)
@@ -132,10 +277,15 @@ distclean: realclean $(DISTCLEAN)
 	$(RM) -r bin/ lib/
 distclean-%: %
 	$(MAKE) -C $< distclean
-	$(RM) -r .calva/ .clj-kondo/cache .lsp/
+	$(RM) -r .calva/ .clj-kondo/.cache .lsp/
 
+# XXX Limit removing ~/.m2 to ingy until we can get ~/.m2 to not be used
 sysclean: realclean
-	$(RM) -r ~/.m2/ /tmp/graalvm* /tmp/yamlscript/
+	$(RM) -r $(YS_TMP)
+	$(RM) -r /tmp/yamlscript-* /tmp/ys-local
+ifeq (ingy,$(USER))
+	$(RM) -r $(HOME)/.m2
+endif
 
 $(DOCKER_BUILD):
 docker-build: $(DOCKER_BUILD)

@@ -1,7 +1,7 @@
 YAMLScript
 ==========
 
-Program in YAML
+Program in YAML — Code is Data
 
 
 ## Synopsis
@@ -341,11 +341,11 @@ with YAML syntax.
 ```
 - (def vec1 [5 7 9])                # Define a variable bound to a vector
 - vec2: [5 7 9]                     # Bad. YAML sees it as `["5 7 9"]`
-- vec3: .[5 7 9]                    # Good. The period makes value a YAML scalar
+- vec3: -[5 7 9]                    # Good. The dash makes value a YAML scalar
 ```
 
-Use a period at the start of a value so that YAML will consider the value to be
-a scalar, thus interpreted as a Clojure expression.
+Use a dash at the start of a value so that YAML will consider the value to be a
+scalar, thus interpreted as a Clojure expression.
 
 What if you want to use YAML to define an actual data structure in your
 YAMLScript program?
@@ -630,7 +630,7 @@ list:
   - say: "Hello world!"
   - say("Hello"): "world!"
   - say: ["Hello", "world!"]
-  - say: ."Hello", "world!"
+  - say: -"Hello", "world!"
   ```
 
 * Function Definition
@@ -662,7 +662,7 @@ list:
   `if` expressions:
 
   ```
-  if (x > 50):          # condition
+  if x > 50:            # condition
   - say("$x wins :)")   # then
   - say("$x loses :(")  # else
 
@@ -685,9 +685,9 @@ list:
 
   ```
   ???:
-    (x > 50) : "big"
-    (x < 50) : "small"
-    :else    : "just right"
+    x > 50 : "big"
+    x < 50 : "small"
+    :else  : "just right"
 
   (cond
     (> x 50) "big"
@@ -698,8 +698,8 @@ list:
 * Try / Catch
 
   ```
-  - try: (42 / 0)
-    catch(Exception e):
+  - try: 42 / 0
+    catch e:
       say: "Caught error '$e'"
 
   (try (/ 42 0)
@@ -721,9 +721,9 @@ list:
 * Looping
 
   ```
-  loop [x 1]:
+  loop x 1:
     say: x
-    if (x < 5):
+    if x < 5:
       ^^^: (x + 1)
 
   (loop [x 1]
@@ -961,7 +961,7 @@ becomes something like this fully tagged YAML structure:
 ```
 --- !program
 !def  "name"    : !str  "YAMLScript"
-!call "println" : !vstr "Hello, $name"
+!call "println" : !xstr "Hello, $name"
 ```
 
 The construction phase of turning this into a Lingy AST is just applying the

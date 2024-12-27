@@ -2,11 +2,11 @@
 ; This code is licensed under MIT license (See License for details)
 
 (ns yamlscript.resolver-test
-  #_(:use yamlscript.debug)
   (:require
    [clojure.edn :as edn]
-   [yamlscript.parser :as parser]
+   [yamlscript.common]
    [yamlscript.composer :as composer]
+   [yamlscript.parser :as parser]
    [yamlscript.resolver :as resolver]
    [yamltest.core :as test]))
 
@@ -18,7 +18,7 @@
   {:pick #(test/has-keys? [:yamlscript :resolve] %1)
    :test (fn [test]
            (try
-             (->> test
+             (-> test
                :yamlscript
                parser/parse
                composer/compose
@@ -28,6 +28,6 @@
                  (.getMessage e)
                  (throw e)))))
    :want (fn [test]
-           (->> test
+           (-> test
              :resolve
              edn/read-string))})

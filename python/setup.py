@@ -1,4 +1,4 @@
-version = '0.1.36'
+version = '0.1.87'
 
 from setuptools import setup
 import pathlib
@@ -12,7 +12,7 @@ long_description = \
 setup(
   name = 'yamlscript',
   version = version,
-  description = 'Program in YAML',
+  description = 'Program in YAML — Code is Data',
   license = 'MIT',
   url = 'https://github.com/ingydotnet/yamlscript',
 

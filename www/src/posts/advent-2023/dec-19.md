@@ -101,14 +101,14 @@ How about this ugly multi-arity defn:
 
 ```yaml
 defn toMap:
-  .[]: .{}
-  .[x]:
+  +[]: +{}
+  +[x]:
     apply: hash-map x
-  .[k v & xs]:
+  +[k v & xs]:
     apply: hash-map k v xs
 ```
 
-Here we needed to dot-escape the `[]` keys.
+Here we needed to plus-escape the `[]` keys.
 I'd rather see like:
 
 ```yaml
@@ -116,7 +116,7 @@ defn toMap:
   (): hash-map()
   (x):
     apply: hash-map x
-  (k v & xs):
+  (k v *xs):
     apply: hash-map k v xs
 ```
 
@@ -127,14 +127,14 @@ One of the more problematic forms in this file is the macro definition:
 
 ```yaml
 defmacro each [bindings & body]:
-  .`(do
+  +`(do
       (doall
         (for [~@bindings] (do ~@body)))
       nil)
 ```
 
 I pretty much had to leave the original Clojure syntax alone here.
-The backtick is a reserved character in YAML so we had to dot-escape it.
+The backtick is a reserved character in YAML so we had to plus-escape it.
 
 There's actually quite a few problems that macros cause for YAMLScript.
 I won't bore you with the details.
@@ -156,6 +156,3 @@ But I need to make it work first!
 Fingers crossed.
 
 Come back tomorrow for Day 20 of the YAMLScript Advent Calendar.
-
-
-{% include "../../santa-secrets.md" %}

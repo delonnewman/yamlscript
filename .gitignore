@@ -1,10 +1,16 @@
 /*.clj
+/*.md
 /*.yaml
 /*.ys
 /bin/
+/homebrew-yamlscript/
 /issue-*
 /lib/
 /libyamlscript-*
+/release*.log
+/release-changes.txt
+/release-id.txt
+/work/
 /www
 /ys-*
 
@@ -15,7 +21,7 @@ classes/
 .cpcache/
 Dockerfile
 .DS_Store
-EVAL
+NO-NAME
 *.jar
 .lein-*
 .lsp/

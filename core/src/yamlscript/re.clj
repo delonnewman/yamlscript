@@ -10,8 +10,8 @@
 (ns yamlscript.re
   (:require
    [clojure.string :as str]
-   [yamlscript.debug :refer [www]])
-  (:refer-clojure :exclude [char]))
+   [yamlscript.common])
+  (:refer-clojure :exclude [char quot]))
 
 (defn re [rgx]
   (loop [rgx (str rgx)]
@@ -28,8 +28,8 @@
           (recur rgx))
         (re-pattern rgx)))))
 
-(def char #"(?x)
-            \\
+(def char #"(?x)(?:
+            \\\\
             (?:
               newline |
               space |
@@ -38,59 +38,122 @@
               backspace |
               return |
               .
-            )")                            ; Character token
-(def comm #";.*(?:\n|\z)")                 ; Comment token
+            ))")                           ; Character token
+(def tend #"(?=[\.\,\s\]\}\)]|$)")         ; End of token
+(def ccom #"(?:;.*(?:\n|\z))")             ; Clojure comment
 (def ignr #"(?x)
             (?:                            # Ignorables
               |                              # Empty
               \#\!.*\n? |                    # hashbang line
               [\s,]+    |                    # whitespace, commas,
-              ;.*\n?                         # comments
             )")
-(def inum #"-?\d+")                        ; Integer literal token
-(def fnum (re #"$inum\.\d*(?:e$inum)?"))   ; Floating point literal token
+(def spec #"(?:~@|[~@`^])")                ; Special token
+(def quot #"(?:\\')")                      ; Quote token
+(def dotx #"(?x)                           # Dot special operator
+            (?:\.
+              (?:
+                \?{1,2} |
+                \!{1,2} |
+                \+\+ |
+                \-\- |
+                \# |
+                \$(?!\w) |
+                \> | \>\>\>
+              )
+            )")
+(def dotn #"(?:\.-?\d+)")                  ; Dot operator followed by number
+(def ukey #"(?:\w+(?:_\w+)+)")             ; Word with _ allowed
+(def inum #"(?:-?\d+)")                    ; Integer literal token
+(def fnum (re #"(?:$inum\.\d+(?:e$inum)?)"))   ; Floating point literal token
 (def xnum (re #"(?:$fnum|$inum)"))         ; Numeric literal token
-(def xsym #"(?:\=\~)")                     ; Special operator token
-(def osym #"(?:[-+*/%<=>~|&.]{1,3})")      ; Operator symbol token
+                                           ; Maybe Number token
+(def mnum (re #"(?x)
+                (?: $xnum
+                  (?:[-+/*%_] \d* |
+                     \.\d+ |
+                     \.\w+ [\?\!]? (?=[^\(\w\?\!] | $)
+                  )*
+                )
+              "))
+(def xsym #"(?:\=\~|!~)")                  ; Special operator token
+(def osym #"(?:[-+*/%<>!=~|&.]{1,3})")     ; Operator symbol token
 (def anon #"(?:\\\()")                     ; Anonymous fn start token
+(def sett #"(?:\\\{)")                     ; Set start token
 (def narg #"(?:%\d+)")                     ; Numbered argument token
-(def regx #"(?x)                           # Regular expression
+(def regx #"(?x)(?:                        # Regular expression
             / (?=\S)                         # opening slash
             (?:
               \\. |                          # Escaped char
               [^\\\/\n]                      # Any other char
             )+/                              # Ending slash
-            ")
-(def dstr #"(?x)
+            )")
+(def dstr #"(?x)(?:
             \"(?:                          # Double quoted string
               \\. |                          # Escaped char
               [^\\\"]                        # Any other char
             )*\"                             # Ending quote
-            ")
-(def sstr #"(?x)
-            '(?:                          # Single quoted string
+            )")
+(def sstr #"(?x)(?:
+            '(?:                           # Single quoted string
               '' |                           # Escaped single quote
               [^']                           # Any other char
             )*'                              # Ending quote
-            ")
+            )")
+(def icom (re #"(?:\\$dstr)"))             ; Inline comment token
 (def pnum #"(?:\d+)")                      ; Positive integer
-(def anum #"[a-zA-Z0-9]")                  ; Alphanumeric
-(def symw (re #"(?:$anum+(?:-$anum+)*)"))  ; Symbol word
-(def pkey (re #"(?:$symw|$pnum|$dstr|$sstr)"))   ; Path key
-(def path (re #"(?:$symw(?:\.$pkey)+)"))   ; Lookup path
+(def alph #"(?:[a-zA-Z])")                 ; Alpha
+(def anum #"(?:[a-zA-Z0-9])")              ; Alphanumeric
+(def symw (re #"(?:$alph$anum*(?:-$anum+)*)"))  ; Symbol word
+(def vsym (re #"(?:\$$symw|\$(?=\.))"))    ; Variable lookup symbol
+(def ssym (re #"(?:\$\$|\$\#|\$)"))        ; Special symbols
 (def keyw (re #"(?:\:$symw)"))             ; Keyword token
+(def dots (re #"(?:(?:\.$ukey)$tend)"))    ; Dot operator word with _ allowed
                                            ; Clojure symbol
-(def csym #"(?:[-a-zA-Z0-9_*+?!<=>]+(?:\.(?=\ ))?)")
-(def ysym (re #"(?:$symw[?!.]?)"))         ; YS symbol token
+(def csym #"(?:[-a-zA-Z0-9_*+?!<=>$]+(?:\.(?=\ ))?)")
+(def ysym (re #"(?:$symw[+?!]?|_)"))       ; YS symbol token
+(def splt (re #"(?:$ysym\*)"))             ; Splat symbol
+(def asym (re #"(?:\*$symw)"))             ; Alias symbol
 (def dsym (re #"(?:$symw=)"))              ; YS symbol with default
 (def nspc (re #"(?:$symw(?:\:\:$symw)+)")) ; Namespace symbol
 (def fsym (re #"(?:(?:$nspc|$symw)\/$ysym)"))  ; Fully qualified symbol
-                                           ; Symbol followed by paren
-(def psym (re #"(?:(?:$fsym|$ysym)\()"))
-(def esym (re #"(?:\*$symw\*)"))           ; Earmuff symbol
+(def psym (re #"(?:(?:$fsym|$ysym)\()"))   ; Symbol followed by paren
+                                           ; Colon calls
+(def ksym (re #"(?x)
+                (?:
+                  (?:
+                    $fsym |
+                    \$? $ysym |
+                    $xnum |
+                    $ukey |
+                    [\)\]\}] |
+                    \.
+                      (?:
+                        \d+ |
+                        \# |
+                        \-\- |
+                        \+\+ |
+                        \?\?? |
+                        \!\!?
+                      )
+                  )
+                  (?:
+                    \.?
+                    \:
+                    (?:
+                      (?:
+                        $nspc |
+                        $symw
+                      ) /
+                    )
+                    ?$symw [+?!]?
+                  )+
+                )"))
 
-(def defk (re #"$symw +="))                ; Pair key for def/let call
-(def dfnk (re #"^defn ($ysym)(?:\((.*)\))?$"))  ; Pair key for defn call
+(def eqop (re #"(?:\|\|\|?|[-+*/.]|\*\*)"))
+                                           ; Pair key for def/let call
+(def defk (re #"(?:((?:\[.*\]|\{.*\}|$symw).*?) +($eqop?)=)"))
+(def dfnk (re #"(?:^(defn-?) +($ysym)(?:\((.*)\))?$)")) ; Pair key for defn call
+(def afnk (re #"(?:^(fn)( +$ysym)?(?:\((.*)\))?$)"))    ; Pair key for a fn call
 
 ; Balanced parens
 (def bpar #"(?x)
@@ -110,5 +173,4 @@
           ")
 
 (comment
-  www
   )

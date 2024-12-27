@@ -9,7 +9,7 @@
 
 (ns yamlscript.parser
   (:require
-   [yamlscript.debug :refer [www]])
+   [yamlscript.common])
   (:import
    (java.util Optional)
    (org.snakeyaml.engine.v2.api LoadSettings)
@@ -21,24 +21,29 @@
      AliasEvent
      ScalarEvent
      CollectionStartEvent
+     DocumentStartEvent
+     DocumentEndEvent
      MappingStartEvent
      MappingEndEvent
      SequenceStartEvent
-     SequenceEndEvent)))
+     SequenceEndEvent))
+  (:refer-clojure))
 
 (declare ys-event)
 
+(def shebang-ys #"^#!.*/env ys-0\n")
+(def shebang-bash #"^#!.*[/ ]bash\n+source +<\(")
 (defn parse
   "Parse a YAML string into a sequence of event objects."
   [yaml-string]
   (let [parser (new Parse (.build (LoadSettings/builder)))
-        has-code-mode-shebang (re-find
-                                  #"^#!.*ys-0"
-                                  yaml-string)
+        has-code-mode-shebang (or (re-find shebang-ys yaml-string)
+                                (re-find shebang-bash yaml-string))
         events (->> yaml-string
                  (.parseString parser)
                  (map ys-event)
-                 (remove nil?))
+                 (remove nil?)
+                 rest)
         [first-event & rest-events] events
         first-event-tag (:! first-event)
         first-event (if (and has-code-mode-shebang
@@ -51,18 +56,26 @@
         events (cons first-event rest-events)]
     (remove nil? events)))
 
+(defn parse-test-case [yaml-string]
+  (->> yaml-string
+    parse
+    (remove (fn [ev] (= "DOC" (subs (:+ ev) 1))))))
+
 ;;
 ;; Functions to turn Java event objects into Clojure objects
 ;;
 (defn event-obj [^Event event]
   (let [class (class event)
-        name (cond (= class MappingStartEvent) "+MAP"
-                   (= class MappingEndEvent) "-MAP"
-                   (= class SequenceStartEvent) "+SEQ"
-                   (= class SequenceEndEvent) "-SEQ"
-                   (= class ScalarEvent) "=VAL"
-                   (= class AliasEvent) "=ALI"
-                   :else (throw (Exception. (str class))))
+        name (condp = class
+               DocumentStartEvent "+DOC"
+               DocumentEndEvent "-DOC"
+               MappingStartEvent "+MAP"
+               MappingEndEvent "-MAP"
+               SequenceStartEvent "+SEQ"
+               SequenceEndEvent "-SEQ"
+               ScalarEvent "=VAL"
+               AliasEvent "=ALI"
+               (die class))
         start ^Optional (. event getStartMark)
         end ^Optional (. event getEndMark)]
     (with-meta
@@ -78,33 +91,41 @@
 
 (defn event-start [event]
   (let [obj (event-obj event)
-        flow (when (not= ScalarEvent (class event))
+        doc-event? (some #(instance? % event)
+                     [DocumentStartEvent DocumentEndEvent])
+        coll-start? (some #(instance? % event)
+                      [MappingStartEvent SequenceStartEvent])
+        flow (when coll-start?
                (. ^CollectionStartEvent event isFlow))
-        anchor (str (.orElse ^Optional (. ^NodeEvent event getAnchor) nil))
+        anchor (when-not doc-event?
+                 (str (.orElse ^Optional (. ^NodeEvent event getAnchor) nil)))
         tag (if (= ScalarEvent (class event))
               (str (.orElse ^Optional (. ^ScalarEvent event getTag) nil))
-              (str (.orElse ^Optional (. ^CollectionStartEvent event getTag)
-                     nil)))
+              (when (not doc-event?)
+                (str (.orElse ^Optional (. ^CollectionStartEvent event getTag)
+                       nil))))
         obj (if flow (assoc obj :flow true) obj)
         obj (if (= "" anchor) obj (assoc obj :& anchor))
-        obj (if (= "" tag)
+        obj (if (or (nil? tag) (= "" tag))
               obj
               (if (re-find #"^tag:" tag)
-                (assoc obj :! tag )
-                (assoc obj :! (subs tag 1))
-                ))]
+                (assoc obj :! tag)
+                (assoc obj :! (subs tag 1))))]
     obj))
 
-(defn map-start [^MappingStartEvent event] (event-start event))
-(defn map-end [^MappingEndEvent event] (event-obj event))
+(defn doc-start [^DocumentStartEvent event] (event-start event))
+(defn doc-end   [^DocumentEndEvent event]   (event-obj event))
+(defn map-start [^MappingStartEvent event]  (event-start event))
+(defn map-end   [^MappingEndEvent event]    (event-obj event))
 (defn seq-start [^SequenceStartEvent event] (event-start event))
-(defn seq-end [^SequenceEndEvent event] (event-obj event))
+(defn seq-end   [^SequenceEndEvent event]   (event-obj event))
 (defn scalar-val [^ScalarEvent event]
   (let [obj (event-start event)
         style (.. event (getScalarStyle) (toString))
-        style (cond (= style ":") "="
-                    (= style "\"") "$"
-                    :else style)
+        style (condp = style
+                ":" "="
+                "\"" "$"
+                style)
         style (keyword style)]
     (assoc obj style (. event getValue))))
 (defn alias-val [^AliasEvent event]
@@ -112,6 +133,8 @@
     (assoc obj :* (str (. event getAlias)))))
 
 (defmulti  ys-event class)
+(defmethod ys-event DocumentStartEvent [event] (doc-start  event))
+(defmethod ys-event DocumentEndEvent   [event] (doc-end    event))
 (defmethod ys-event MappingStartEvent  [event] (map-start  event))
 (defmethod ys-event MappingEndEvent    [event] (map-end    event))
 (defmethod ys-event SequenceStartEvent [event] (seq-start  event))
@@ -121,6 +144,4 @@
 (defmethod ys-event :default [_] nil)
 
 (comment
-  www
-  (parse "a")
   )

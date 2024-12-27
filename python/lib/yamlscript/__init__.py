@@ -16,7 +16,7 @@ object that the YAMLScript code evaluates to.
 # This value is automatically updated by 'make bump'.
 # The version number is used to find the correct shared library file.
 # We currently only support binding to an exact version of libyamlscript.
-yamlscript_version = '0.1.36'
+yamlscript_version = '0.1.87'
 
 import os, sys
 import ctypes
@@ -40,7 +40,7 @@ def find_libyamlscript_path():
       "Unsupported platform '%s' for yamlscript." % sys.platform)
 
   # We currently bind to an exact version of libyamlscript.
-  # eg 'libyamlscript.so.0.1.234'
+  # eg 'libyamlscript.so.0.1.87'
   libyamlscript_name = \
     "libyamlscript.%s.%s" % (so, yamlscript_version)
 
@@ -49,6 +49,7 @@ def find_libyamlscript_path():
   ld_library_path = os.environ.get('LD_LIBRARY_PATH')
   ld_library_paths = ld_library_path.split(':') if ld_library_path else []
   ld_library_paths.append('/usr/local/lib')
+  ld_library_paths.append(os.environ.get('HOME') + '/.local/lib')
 
   libyamlscript_path = None
   for path in ld_library_paths:
@@ -59,7 +60,11 @@ def find_libyamlscript_path():
 
   if not libyamlscript_path:
     raise Exception(
-      "Shared library file '%s' not found." % libyamlscript_name)
+      """\
+Shared library file '%s' not found
+Try: curl https://yamlscript.org/install | VERSION=%s LIB=1 bash
+See: https://github.com/yaml/yamlscript/wiki/Installing-YAMLScript
+""" % (libyamlscript_name, yamlscript_version))
 
   return libyamlscript_path
 
@@ -91,11 +96,14 @@ class YAMLScript():
     self.isolatethread = ctypes.c_void_p()
 
     # Create a new GraalVM isolate:
-    libyamlscript.graal_create_isolate(
+    rc = libyamlscript.graal_create_isolate(
       None,
       None,
       ctypes.byref(self.isolatethread),
     )
+
+    if rc != 0:
+      raise Exception("Failed to create isolate")
 
   # Compile and eval a YAMLScript string and return the result:
   def load(self, input):
@@ -117,9 +125,9 @@ class YAMLScript():
       raise Exception(self.error['cause'])
 
     # Get the response object from evaluating the YAMLScript string:
-    data = resp.get('data')
-    if data is None:
+    if not 'data' in resp:
       raise Exception("Unexpected response from 'libyamlscript'")
+    data = resp.get('data')
 
     # Return the response object:
     return data
@@ -127,6 +135,6 @@ class YAMLScript():
   # YAMLScript instance destructor:
   def __del__(self):
     # Tear down the isolate thread to free resources:
-    ret = libyamlscript.graal_tear_down_isolate(self.isolatethread)
-    if ret != 0:
-      raise Exception("Failed to tear down isolate.")
+    rc = libyamlscript.graal_tear_down_isolate(self.isolatethread)
+    if rc != 0:
+      raise Exception("Failed to tear down isolate")

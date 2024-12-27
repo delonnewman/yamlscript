@@ -70,7 +70,7 @@
       - False
       - :string
   print: |
-    {"foo" [-42 {"bar" 3.1415, "baz" [true false ":string"]}]}
+    {"foo" [-42 {"bar" 3.1415, "baz" [true false :string]}]}
 
 
 - name: Empty YAMLScript File
@@ -92,9 +92,7 @@
   yamlscript: |
     !yamlscript/v0
     ; just a comment
-  build: |
-    nil
-  print: |
+  # Semicolon comments are errors now
 
 
 - name: data mode with code mode

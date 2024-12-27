@@ -10,6 +10,12 @@ CARGO_CMDS := \
     publish \
     test \
 
+
+#------------------------------------------------------------------------------
+build:: build-doc
+
+build-doc:: ReadMe.md
+
 ifdef CARGO
 $(CARGO_CMDS)::
 	cargo $@

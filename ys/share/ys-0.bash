@@ -2,7 +2,9 @@
 
 set -euo pipefail
 
-yamlscript_version=0.1.36
+[[ ${YS_SH_DEBUG-} ]] && set -x
+
+yamlscript_version=0.1.87
 
 main() (
   setup "$@"
@@ -10,16 +12,27 @@ main() (
   "do-$command" "${arguments[@]}"
 )
 
-do-compile-to-native() (
+do-install() (
+  export PREFIX=${PREFIX:-$(dirname "$bindir")}
+  export LIB=1
+  curl -sS https://yamlscript.org/install | bash
+)
+
+do-upgrade() (
+  export PREFIX=${PREFIX:-$(dirname "$bindir")}
+  curl -sS https://yamlscript.org/install | bash
+)
+
+do-compile-to-binary() (
   in_file=${1-}
   out_file=${2-}
   ys_version=${3-}
   [[ $in_file &&
      $out_file &&
      $ys_version &&
-     ( $in_file == EVAL.ys || -f $in_file )
+     ( $in_file == NO-NAME.ys || -f $in_file )
    ]] ||
-    die "Usage: --compile-to-native <in-file> <out-file> <ys-version>"
+    die "Usage: --compile-to-binary <in-file> <out-file> <ys-version>"
   [[ $in_file == *.ys ]] ||
     die "File '$in_file' must have .ys extension"
 
@@ -31,8 +44,8 @@ do-compile-to-native() (
   out_name=$(basename -- "$out_file")
   out_path=$out_base/${out_name%.ys}
 
-  [[ $in_file == EVAL.ys ]] && in_file='-e'
-  [[ $out_file == EVAL ]] && out_file='./EVAL'
+  [[ $in_file == NO-NAME.ys ]] && in_file='-e'
+  [[ $out_file == NO-NAME ]] && out_file='./NO-NAME'
 
   assert-lein
   assert-graalvm
@@ -64,14 +77,18 @@ setup() {
   command=${1#--}; shift
   arguments=("$@")
 
+  bindir=$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+
   [[ $(command -v "do-$command") ]] ||
     die "Unknown command: --$command"
 
   # root=$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 
+  ys_tmp=/tmp/yamlscript
+
   lein_url=https://raw.githubusercontent.com/technomancy/
   lein_url+=leiningen/stable/bin/lein
-  lein_path=/tmp/yamlscript/bin
+  lein_path=$ys_tmp/bin
 
   graalvm_subdir=''
   if [[ $OSTYPE == *linux* ]]; then
@@ -94,13 +111,13 @@ setup() {
   fi
 
   graalvm_src=https://download.oracle.com/graalvm
-  graalvm_ver=21
+  graalvm_ver=22
   graalvm_tar=graalvm-jdk-${graalvm_ver}_${graalvm_arch}_bin.tar.gz
   graalvm_dir_prefix=graalvm-jdk-${graalvm_ver}.
   graalvm_url=$graalvm_src/$graalvm_ver/latest/$graalvm_tar
-  graalvm_path=/tmp/graalvm-oracle-$graalvm_ver
+  graalvm_path=$ys_tmp/graalvm-oracle-$graalvm_ver
   graalvm_home=${graalvm_path}$graalvm_subdir
-  graalvm_download=/tmp/$graalvm_tar
+  graalvm_download=$ys_tmp/$graalvm_tar
   graalvm_installed=$graalvm_home/release
 
   export JAVA_HOME=$graalvm_home
@@ -110,27 +127,25 @@ setup() {
 write-program-clj() (
   in_path=$1 in_file=$2
 
-  if [[ $in_path == */EVAL.ys ]]; then
+  if [[ $in_path == */NO-NAME.ys ]]; then
     program=$(
-      "$YS_BIN" --compile --eval="$YS_CODE" |
-        grep -Ev '^\(apply main ARGV\)'
+      "$YS_BIN" --compile --eval="$YS_CODE" | sed '$d'
     )
   else
     program=$(
-      "$YS_BIN" --compile "$in_path" |
-        grep -Ev '^\(apply main ARGV\)'
+      "$YS_BIN" --compile "$in_path" | sed '$d'
     )
   fi
 
   n=$'\n'
-  [[ $program =~ (^|$n)\(defn[\ $n]+main[\ $n] ]] ||
+  [[ $program =~ \(defn[\ $n]+main[\ $n] ]] ||
     die "Could not find main function in '$in_file'"
 
   cat <<EOF > src/program.clj
 (ns program (:gen-class) (:refer-clojure :exclude [print]))
 (use 'clojure.core)
 (use 'ys.std)
-(def ^:dynamic ARGV [])
+(def ^:dynamic ARGS [])
 (def ^:dynamic ENV {})
 ;; ------------------------------------------------------------------------
 
@@ -149,11 +164,11 @@ EOF
 
 write-profile() (
   cat > project.clj <<EOF
-(defproject program "ys-native"
-  :description "Compile a YAMLScript program to native machine code"
+(defproject program "ys-binary"
+  :description "Compile a YAMLScript program to native binary executable"
 
   :dependencies
-  [[org.clojure/clojure "1.11.1"]
+  [[org.clojure/clojure "1.12.0"]
    [org.babashka/sci "0.8.41"]
    [yamlscript/core "$yamlscript_version"]]
 
@@ -185,9 +200,9 @@ write-makefile() (
   cat > Makefile <<'EOF'
 SHELL := bash
 
-export PATH := /tmp/graalvm-oracle-21/bin:$(PATH)
+export PATH := /tmp/yamlscript/graalvm-oracle-21/bin:$(PATH)
 
-JAR := target/uberjar/program-ys-native-standalone.jar
+JAR := target/uberjar/program-ys-binary-standalone.jar
 
 OPTIONS := \
   -O1 \
@@ -226,10 +241,12 @@ EOF
 
 assert-yamlscript-core() (
   ys_version=$1
+  # XXX $ys_tmp/.m2 not fully working yet:
+  # ys_jar=$ys_tmp/.m2/repository/yamlscript/core/$ys_version/core-$ys_version.jar
   ys_jar=$HOME/.m2/repository/yamlscript/core/$ys_version/core-$ys_version.jar
   if ! [[ -f $ys_jar ]]; then
     say "Installing YAMLScript core in '$ys_jar'"
-    repo_path=/tmp/yamlscript/$ys_version
+    repo_path=$ys_tmp/$ys_version
     assert-yamlscript-repo "$repo_path"
     (
       set -x
@@ -255,12 +272,12 @@ assert-yamlscript-repo() (
 )
 
 assert-lein() {
-  if ! [[ -f /tmp/yamlscript/bin/lein ]]; then
+  if ! [[ -f $ys_tmp/bin/lein ]]; then
     say "Installing lein in '$lein_path/lein'"
     mkdir -p "$lein_path"
     (
       set -x
-      curl -s "$lein_url" > "$lein_path/lein"
+      curl -sS "$lein_url" > "$lein_path/lein"
     )
   fi
   [[ -f $lein_path/lein ]] ||
@@ -273,8 +290,8 @@ assert-graalvm() {
     say "Unpacking GraalVM in '$graalvm_path'"
     (
       set -x
-      tar -xzf "$graalvm_download" -C /tmp
-      mv "/tmp/$graalvm_dir_prefix"* "$graalvm_path"
+      tar -xzf "$graalvm_download" -C $ys_tmp
+      mv "$ys_tmp/$graalvm_dir_prefix"* "$graalvm_path"
     )
   fi
   [[ -f $graalvm_installed ]] ||
@@ -287,7 +304,7 @@ assert-graalvm-tarball() {
     mkdir -p "$(dirname -- "$graalvm_download")"
     (
       set -x
-      curl -s "$graalvm_url" > "$graalvm_download"
+      curl -sS "$graalvm_url" > "$graalvm_download"
     )
   fi
   [[ -f $graalvm_download ]] ||

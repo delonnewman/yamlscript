@@ -1,8 +1,6 @@
-=meta: 0.0.2
-
 name: YAMLScript
-version: 0.1.36
-abstract: Program in YAML
+version: 0.1.87
+abstract: Program in YAML — Code is Data
 homepage: https://yamlscript.org
 license: mit
 copyright: 2022-2024

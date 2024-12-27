@@ -7,16 +7,21 @@
 (ns yamlscript.printer
   (:require
    [clojure.string :as str]
-   [yamlscript.debug :refer [www]])
+   [yamlscript.common]
+   [yamlscript.global])
   (:refer-clojure :exclude [print]))
 
 (def string-escape
-  {\" "\\\""
-   \newline "\\n"})
+  {\\ "\\\\"
+   \" "\\\""
+   \backspace "\\b"
+   \formfeed "\\f"
+   \newline "\\n"
+   \return "\\r"
+   \tab "\\t"})
 
 (defn pr-string [s]
-  (-> s
-    (str/escape string-escape)))
+  (str/escape s string-escape))
 
 (def regex-escape
   {\" "\\\""})
@@ -24,6 +29,18 @@
 (defn pr-regex [s]
   (-> s
     (str/escape regex-escape)))
+
+(defn pr-symbol [s]
+  (case s
+    "ERR" "*err*"
+    "IN" "*in*"
+    "NS" "*ns*"
+    "OUT" "*out*"
+    "=~" "=--"
+    "!~" "!--"
+    "==" "="
+    "=" (die "Operator '=' is not allowed in YAMLScript")
+    , s))
 
 (defn print-node [node]
   (let [node (if (keyword? node) {node true} node)
@@ -38,29 +55,38 @@
              "["
              (str/join " " (map print-node val))
              "]")
-      :Map (str
-             "{"
-             (str/join ", " (->> val
-                              (partition 2)
-                              (map #(str
-                                      (print-node (first %1))
-                                      " "
-                                      (print-node (second %1))))))
+      :Set (str
+             "#{"
+             (str/join " " (map print-node val))
              "}")
+      :Map (let [[start end] (if (:unordered @yamlscript.global/opts)
+                               ["{" "}"]
+                               ["(% " ")"])]
+             (str
+               start
+               (str/join ", " (->> val
+                                (partition 2)
+                                (map #(str
+                                        (print-node (first %1))
+                                        " "
+                                        (print-node (second %1))))))
+               end))
       :Str (str \" (pr-string val) \")
       :Rgx (str \# \" (pr-regex val) \")
       :Chr (str "\\" val)
+      :QSym (str "'" val)
+      :Qts (str "'" val)
       :Spc (str/replace val #"::" ".")
-      :Sym (str (str/replace val #"~" "--"))
+      :Sym (pr-symbol (str val))
       :Tok (str val)
+      :Tup (apply str (map print-node val))
       :Key (str val)
       :Int (str val)
       :Flt (str val)
       :Bln (str val)
+      :Clj (with-out-str (clojure.core/print val))
       :Nil "nil"
-      ,     (throw
-              (Exception. (str "Unknown AST node type:"
-                            node))))))
+      ,    (die "Unknown AST node type:" node))))
 
 (defn print
   "Render a YAMLScript AST as Clojure code."
@@ -71,16 +97,5 @@
                (apply str))]
     code))
 
-(defn print-top [& node]
-  (print {:Top node}))
-
 (comment
-  www
-  (print '{:Top
-           [{:Lst
-             [{:Sym defn}
-              {:Sym foo}
-              nil
-              {:Lst [{:Vec [{:Sym a}]} {:Lst [{:Sym say} {:Sym a}]}]}
-              {:Lst [{:Vec []} {:Lst [{:Sym foo} {:Int 1}]}]}]}]})
   )

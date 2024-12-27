@@ -1,7 +1,7 @@
 { "api": 0
 , "name": "YAMLScript"
-, "version": "0.1.36"
-, "description": "Program in YAML"
+, "version": "0.1.87"
+, "description": "Program in YAML — Code is Data"
 , "auth": "zef:ingy"
 , "provides":
   { "YAMLScript": "lib/YAMLScript.rakumod"

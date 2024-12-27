@@ -5,21 +5,28 @@
 ;; used to test the YAMLScript compiler.
 
 (ns yamltest.core
-  #_(:use yamlscript.debug)
   (:require
+   [clj-yaml.core :as yaml]
    [clojure.string :as str]
    [clojure.test :as test]
-   [clj-yaml.core :as yaml]))
+   [yamlscript.common]))
 
 
 ;; ----------------------------------------------------------------------------
 ;; Key binding helpers
 ;; ----------------------------------------------------------------------------
+
+(def prev-test-ns (atom nil))
+
 (defn get-test-ns [ns]
   (let [from-ns-name (str (ns-name ns))]
-    (if (str/ends-with? from-ns-name "-test")
-      ns
-      (find-ns (symbol (str from-ns-name "-test"))))))
+    (swap! prev-test-ns
+      (fn [x]
+        (if (str/ends-with? from-ns-name "-test")
+          ns
+          (or
+            (find-ns (symbol (str from-ns-name "-test")))
+            @prev-test-ns))))))
 
 (def short-keys {:v :verbose
                  :a :all
@@ -50,18 +57,21 @@
 (defn clear-opts []
   (reset! test-opts {}))
 
-(defn reload-all []
-  (->> (all-ns)
-    (filter #(re-find #"yamlscript\..*-test$" (str (ns-name %1))))
-    (map ns-name)
-    sort
-    (#(doseq [ns %1]
-        (println (str "Reloading " ns))
-        (try
-          (require ns :reload)
-          (catch Exception e
-            (println (str "Error reloading " ns ": " (.getMessage e)))
-            nil))))))
+(defn reload-all
+  ([] (reload-all true))
+  ([print]
+   (->> (all-ns)
+     (filter #(re-find #"yamlscript\..*-test$" (str (ns-name %1))))
+     (map ns-name)
+     sort
+     (#(doseq [ns %1]
+         (when print
+           (println (str "Reloading " ns)))
+         (try
+           (require ns :reload)
+           (catch Exception e
+             (println (str "Error reloading " ns ": " (.getMessage e)))
+             nil)))))))
 
 (defn do-list-tests [ns]
   (let [ns (get-test-ns ns)
@@ -201,12 +211,12 @@
                     (let [want (str/replace want #"^=~\s*" "")
                           want (str/trim-newline want)]
                       (test/is (re-find (re-pattern want) got)))
-                    ,
+
                     (and (string? want) (re-find #"^~~\s*" want))
                     (let [want (str/replace want #"^~~\s*" "")
                           want (str/trim-newline want)]
                       (test/is (str/includes? got want)))
-                    ,
+
                     :else
                     (test/is (= want got))))))))
         (when (seq only)
@@ -222,4 +232,5 @@
 (defn has-keys? [keys map]
   (every? #(contains? map %1) keys))
 
-(comment)
+(comment
+  )

@@ -1,13 +1,17 @@
 include ../common/base.mk
-include ../common/docker.mk
+include $(ROOT)/common/docker.mk
 
-build:: node_modules main
+DOC_FILES := $(shell cd $(ROOT)/doc && echo *.md)
+DOC_FILES := $(DOC_FILES:%=src/doc/%) src/doc/doc.json
+
+build:: node_modules main doc
 ifdef DOCKERENV
 	source ~/.bashrc && yarn build
 else
 	yarn build
 endif
-	cp src/install* src/try* build/
+	cp src/dogs.yaml build/
+	cp src/install* src/try* src/run* build/
 	cp src/blog-redirect-html build/posts/index.html
 	cp src/advent-redirect-html build/posts/advent-2023/index.html
 	mkdir -p build/try
@@ -29,11 +33,12 @@ test::
 
 clean::
 	[[ -h node_modules ]] && $(RM) node_modules || true
-	$(RM) -r build/ gh-pages/
+	$(RM) -r build/ gh-pages/ src/doc
 	$(RM) main
 	$(RM) yamlscript-1920x1080.png
 
 distclean::
+	$(RM) yarn.lock
 	$(RM) -r node_modules/
 
 node_modules: package.json
@@ -46,10 +51,23 @@ endif
 main:
 	ln -s .. main
 
+doc: gen-doc $(DOC_FILES)
+
+gen-doc:
+	$(MAKE) -C ../doc force build
+
+src/doc/%.md: ../doc/%.md src/doc
+	ln -fs ../../$< $@
+
+src/doc/%: % src/doc
+	ln -fs ../../$< $@
+
+src/doc:
+	mkdir -p $@
+
 gh-pages:
 	git branch --track $@ origin/$@ 2>/dev/null || true
-	git worktree prune
-	git worktree add $@
+	git worktree add -f $@
 
 yamlscript-1920x1080.png: src/images/yamlscript.svg
 	svgexport $< $@ 1920:1080 pad

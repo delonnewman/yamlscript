@@ -10,67 +10,92 @@
 
 (ns yamlscript.compiler
   (:require
-   [a0.patch-pprint]
    [clojure.pprint]
    [clojure.edn]
-   [yamlscript.parser]
-   [yamlscript.composer]
-   [yamlscript.resolver]
+   [clojure.string :as str]
    [yamlscript.builder]
-   [yamlscript.transformer]
+   [yamlscript.common]
+   [yamlscript.composer]
    [yamlscript.constructor]
+   [yamlscript.global]
+   [yamlscript.parser]
    [yamlscript.printer]
-   [yamlscript.debug :refer [www]])
+   [yamlscript.resolver]
+   [yamlscript.transformer])
   (:refer-clojure :exclude [compile]))
 
-(def ^:dynamic *debug* {})
-
-(def stages
-  {"parse" true
-   "compose" true
-   "resolve" true
-   "build" true
-   "transform" true
-   "construct" true
-   "print" true})
+(defn parse-events-to-groups [events]
+  (->> events
+    (reduce
+      (fn [acc ev]
+        (if (= (:+ ev) "+DOC")
+          (conj acc [ev])
+          (update acc (dec (count acc)) conj ev)))
+      [[]])
+    (map #(remove (fn [ev] (= "DOC" (subs (:+ ev) 1))) %1))))
 
 (defn compile
   "Convert YAMLScript code string to an equivalent Clojure code string."
   [^String yamlscript-string]
-  (->> yamlscript-string
-    yamlscript.parser/parse
-    yamlscript.composer/compose
-    yamlscript.resolver/resolve
-    yamlscript.builder/build
-    yamlscript.transformer/transform
-    yamlscript.constructor/construct
-    yamlscript.printer/print))
+  (let [events (yamlscript.parser/parse yamlscript-string)
+        groups (parse-events-to-groups events)
+        n (count groups)
+        blocks (loop [[group & groups] groups blocks [] i 1]
+                 (let [blocks (conj blocks
+                                (-> group
+                                  yamlscript.composer/compose
+                                  yamlscript.resolver/resolve
+                                  yamlscript.builder/build
+                                  yamlscript.transformer/transform
+                                  (yamlscript.constructor/construct (>= i n))
+                                  yamlscript.printer/print))]
+                   (if (seq groups)
+                     (recur groups blocks (inc i))
+                     blocks)))]
+    (str/join "" blocks)))
 
-(defn debug-print [stage data]
-  (when (get *debug* stage)
-    (println (str "*** " stage " output ***"))
-    (clojure.pprint/pprint data)
-    (println ""))
-  data)
+(defmacro value-time [& body]
+  `(let [s# (new java.io.StringWriter)]
+     (binding [*out* s#]
+       [(time ~@body)
+        (.replaceAll (str s#) "[^0-9\\.]" "")])))
 
-(defn compile-debug
+(defn stage-with-options [stage-name stage-fn input-args]
+  (if (get-in @yamlscript.global/opts [:debug-stage stage-name])
+    (let [[value time] (value-time (apply stage-fn input-args))]
+      (printf "*** %-9s *** %s ms\n\n" stage-name time)
+      (clojure.pprint/pprint value)
+      (println)
+      value)
+    (apply stage-fn input-args)))
+
+(defn compile-with-options
   "Convert YAMLScript code string to an equivalent Clojure code string."
   [^String yamlscript-string]
-  (->> yamlscript-string
-    yamlscript.parser/parse
-    (debug-print "parse")
-    yamlscript.composer/compose
-    (debug-print "compose")
-    yamlscript.resolver/resolve
-    (debug-print "resolve")
-    yamlscript.builder/build
-    (debug-print "build")
-    yamlscript.transformer/transform
-    (debug-print "transform")
-    yamlscript.constructor/construct
-    (debug-print "construct")
-    yamlscript.printer/print
-    (debug-print "print")))
+  (let [events (stage-with-options "parse"
+                 yamlscript.parser/parse [yamlscript-string])
+        groups (parse-events-to-groups events)
+        n (count groups)
+        blocks (loop [[group & groups] groups blocks [] i 1]
+                 (let [blocks (conj blocks
+                                (-> group
+                                  (#(stage-with-options "compose"
+                                      yamlscript.composer/compose [%1]))
+                                  (#(stage-with-options "resolve"
+                                      yamlscript.resolver/resolve [%1]))
+                                  (#(stage-with-options "build"
+                                      yamlscript.builder/build [%1]))
+                                  (#(stage-with-options "transform"
+                                      yamlscript.transformer/transform [%1]))
+                                  (#(stage-with-options "construct"
+                                      yamlscript.constructor/construct
+                                      [%1 (>= i n)]))
+                                  (#(stage-with-options "print"
+                                      yamlscript.printer/print [%1]))))]
+                   (if (seq groups)
+                     (recur groups blocks (inc i))
+                     blocks)))]
+    (str/join "" blocks)))
 
 (defn pretty-format [code]
   (->> code
@@ -82,10 +107,4 @@
             "\n"))
     (apply str)))
 
-(comment
-  www
-  (->> "../test/hello.ys"
-    slurp
-    compile
-    println)
-  )
+(comment)

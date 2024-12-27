@@ -1,6 +1,8 @@
 include ../common/base.mk
+include $(COMMON)/java.mk
 include $(COMMON)/clojure.mk
 include $(COMMON)/docker.mk
+include $(COMMON)/native.mk
 
 YAMLSCRIPT_CLI_BIN := bin/ys-$(YS_VERSION)
 YAMLSCRIPT_CLI_SRC := \
@@ -19,57 +21,72 @@ YAMLSCRIPT_CLI_JAR_PATH :=
 endif
 endif
 
+BPAN_LOCAL := .bpan
+BPAN_REPO_URL := https://github.com/bpan-org/bpan
+
+test := test/
+
+YS_BUILD_DEPS := \
+  $(YAMLSCRIPT_CLI_BIN) \
+  $(YAMLSCRIPT_CLI_BIN_BASH) \
+
+ifeq (true,$(IS_LINUX))
+ifeq (true,$(IS_INTEL))
+YS_BUILD_DEPS := $(MUSL_GCC) $(YS_BUILD_DEPS)
+NATIVE_OPTS += \
+  -H:CCompilerOption=-Wl,-z,stack-size=2097152 \
+  --static \
+  --libc=musl
+endif
+endif
+
+
 #------------------------------------------------------------------------------
-build:: $(YAMLSCRIPT_CLI_BIN_BASH) $(YAMLSCRIPT_CLI_BIN)
+build:: $(YS_BUILD_DEPS)
 
 install: build
 	mkdir -p $(PREFIX)/bin
 	install -m 755 $(YAMLSCRIPT_CLI_BIN) $(PREFIX)/bin/
-	ln -fs $(notdir $(YAMLSCRIPT_CLI_BIN)) $(PREFIX)/$(YAMLSCRIPT_CLI_BIN:%-$(YS_VERSION)=%-$(API_VERSION))
-	ln -fs $(notdir $(YAMLSCRIPT_CLI_BIN)) $(PREFIX)/$(YAMLSCRIPT_CLI_BIN:%-$(YS_VERSION)=%)
-	install -m 755 $(YAMLSCRIPT_CLI_BIN_BASH) $(PREFIX)/bin/
+	ln -fs $(notdir $(YAMLSCRIPT_CLI_BIN)) \
+	  $(PREFIX)/$(YAMLSCRIPT_CLI_BIN:%-$(YS_VERSION)=%-$(API_VERSION))
+	ln -fs $(notdir $(YAMLSCRIPT_CLI_BIN)) \
+	  $(PREFIX)/$(YAMLSCRIPT_CLI_BIN:%-$(YS_VERSION)=%)
+	install -m 755 $(YAMLSCRIPT_CLI_BIN_BASH) \
+	  $(PREFIX)/bin/
 
 jar: $(YAMLSCRIPT_CLI_JAR_PATH)
 	@:
 
 test: test-unit
 
-test-all: test-unit test-ys
+test-all: test-unit test-run
 
-test-unit: $(LEIN)
+test-unit: $(LEIN) $(YAMLSCRIPT_CORE_INSTALLED)
 	$< test
 
-test-ys: $(YAMLSCRIPT_CLI_BIN)
-	./test/test.sh
-	@echo
-	@echo "*** test.sh completed successfully"
+test-run: $(BPAN_LOCAL) build
+	prove $${TEST_VERBOSE:+'-v'} $(test)
+
+$(BPAN_LOCAL):
+	git clone --depth=1 $(BPAN_REPO_URL) $@
 
 $(YAMLSCRIPT_CLI_BIN): $(YAMLSCRIPT_CLI_JAR_PATH)
+ifndef YS_BIN_DIR
 ifneq (true,$(LIBZ))
-	$(error *** The 'libz.$(SO)' library is required by native-image but not installed)
+	$(error *** \
+	  The 'libz.$(SO)' library is required by native-image but not installed)
 endif
 	mkdir -p $(dir $@)
 	$(TIME) \
 	native-image \
-	    -O$(GRAALVM_O) \
-	    --verbose \
-	    --native-image-info \
-	    --no-fallback \
+	  -H:ConfigurationFileDirectories=config/ \
+	  $(NATIVE_OPTS) \
 	\
-	    --initialize-at-build-time \
-	    --enable-preview \
-	\
-	    -H:+ReportExceptionStackTraces \
-	    -H:IncludeResources=SCI_VERSION \
-	    -H:Log=registerResource: \
-	    -J-Dclojure.spec.skip-macros=true \
-	    -J-Dclojure.compiler.direct-linking=true \
-	    -J-Xmx3g \
-	\
-	    -jar $< \
-	    -o $@
+	  -jar $< \
+	  -o $@
 	ln -fs $(notdir $@) $(@:%-$(YS_VERSION)=%-$(API_VERSION))
 	ln -fs $(notdir $@) $(@:%-$(YS_VERSION)=%)
+endif
 
 $(YAMLSCRIPT_CLI_BIN_BASH): $(YAMLSCRIPT_CLI_BIN_BASH_SRC)
 	mkdir -p $(dir $@)
@@ -80,12 +97,12 @@ clean::
 	$(RM) -r .cpcache/
 
 realclean::
-	$(RM) -r bin
+	$(RM) -r bin lib $(BPAN_LOCAL)
 
 ifeq (true,$(IS_ROOT))
 $(YAMLSCRIPT_CLI_JAR_PATH):
 else
-$(YAMLSCRIPT_CLI_JAR_PATH): $(LEIN) $(YAMLSCRIPT_LANG_INSTALLED) $(YAMLSCRIPT_CLI_SRC)
+$(YAMLSCRIPT_CLI_JAR_PATH): $(LEIN) $(YAMLSCRIPT_CORE_INSTALLED) $(YAMLSCRIPT_CLI_SRC)
 	$< uberjar
 endif
 
@@ -99,4 +116,4 @@ Dockerfile:: $(COMMON) Makefile
 	  $</docker-copy-project-deps.dockerfile \
 	  $</docker-deps-clojure.dockerfile \
 	  $</docker-apt-dev.dockerfile \
-		> $@
+	  > $@

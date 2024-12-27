@@ -62,8 +62,24 @@ use serde::Deserialize;
 
 use crate::error::LibYAMLScriptError;
 
-/// The name of the yamlscript library to load.
-const LIBYAMLSCRIPT_FILENAME: &str = "libyamlscript.so.0.1.36";
+/// The name of the YAMLScript library to load.
+const LIBYAMLSCRIPT_BASENAME: &str = "libyamlscript";
+
+/// The version of the yamlscript library this bindings works with.
+const LIBYAMLSCRIPT_VERSION: &str = "0.1.87";
+
+/// The extension of the YAMLScript library. On Linux, it's a `.so` file.
+#[cfg(target_os = "linux")]
+const LIBYAMLSCRIPT_EXTENSION: &str = "so";
+/// The extension of the YAMLScript library. On MacOS, it's a `.dylib` file.
+#[cfg(target_os = "macos")]
+const LIBYAMLSCRIPT_EXTENSION: &str = "dylib";
+// This should be the extension of the library file, but the platform is unsupported.
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+compile_error!(
+    "Unsupported platform {} for yamlscript.",
+    std::env::consts::OS
+);
 
 /// A wrapper around libyamlscript.
 pub struct YAMLScript {
@@ -202,13 +218,21 @@ impl YAMLScript {
         let mut first_error = None;
         let library_path = std::env::var("LD_LIBRARY_PATH").map_err(|_| Error::NotFound)?;
 
+        // Additionally look in `/usr/local/lib` and `${HOME}/.local/lib`.
+        let mut additional_paths = vec!["/usr/local/lib"];
+        let home_path = std::env::var("HOME")
+            .ok()
+            .map(|home| format!("{home}/.local/lib"));
+        if let Some(path) = &home_path {
+            additional_paths.push(path.as_str());
+        }
+
         // Iterate over segments of `LD_LIBRARY_PATH`.
-        for path in library_path
-            .split(':')
-            .chain(std::iter::once("/usr/local/lib"))
-        {
+        for path in library_path.split(':').chain(additional_paths.into_iter()) {
             // Try to open the library, if it exists.
-            let path = Path::new(path).join(LIBYAMLSCRIPT_FILENAME);
+            let path = Path::new(path).join(format!(
+                "{LIBYAMLSCRIPT_BASENAME}.{LIBYAMLSCRIPT_EXTENSION}.{LIBYAMLSCRIPT_VERSION}"
+            ));
             if !path.is_file() {
                 continue;
             }

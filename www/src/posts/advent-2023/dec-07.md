@@ -25,36 +25,52 @@ Reminder, here's the quick way to install the latest version:
 $ curl https://yamlscript.org/install | PREFIX=~/.yamlscript bash
 $ export PATH=$HOME/.yamlscript/bin:$PATH
 $ ys --version
-YAMLScript v0.1.21
+YAMLScript v0.1.87
 ```
 
 The best first command to run is `ys --help`:
 
 ```bash
 $ ys --help
-ys - The YAMLScript (YS) Command Line Tool
 
-Usage: ys [options] [file]
+ys - The YAMLScript (YS) Command Line Tool - v0.1.87
+
+Usage: ys [<option...>] [<file>]
 
 Options:
-  -r, --run                Compile and evaluate a YAMLScript file (default)
-  -l, --load               Output the evaluated YAMLScript value
-  -c, --compile            Compile YAMLScript to Clojure
+
+      --run                Run a YAMLScript program file (default)
+  -l, --load               Output (compact) JSON of YAMLScript evaluation
   -e, --eval YSEXPR        Evaluate a YAMLScript expression
-  -C, --clj                Treat input as Clojure code
+                           multiple -e values joined by newline
 
-  -m, --mode MODE          Add a mode tag: code, data, or bare (only for --eval/-e)
+  -c, --compile            Compile YAMLScript to Clojure
+  -b, --binary             Compile to a native binary executable
+
   -p, --print              Print the result of --run in code mode
+  -o, --output FILE        Output file for --load, --compile or --binary
 
-  -o, --output             Output file for --load or --compile
-  -t, --to FORMAT          Output format for --load
-
-  -J, --json               Output JSON for --load
+  -T, --to FORMAT          Output format for --load:
+                             json, yaml, edn
+  -J, --json               Output (pretty) JSON for --load
   -Y, --yaml               Output YAML for --load
   -E, --edn                Output EDN for --load
+  -U, --unordered          Mappings don't preserve key order (faster)
 
-  -X, --debug              Debug mode: print full stack trace for errors
-  -x, --debug-stage STAGE  Display the result of stage(s)
+  -m, --mode MODE          Add a mode tag: code, data, or bare (for -e)
+  -C, --clojure            Treat input as Clojure code
+
+  -d                       Debug all compilation stages
+  -D, --debug-stage STAGE  Debug a specific compilation stage:
+                             parse, compose, resolve, build,
+                             transform, construct, print
+                           can be used multiple times
+  -S, --stack-trace        Print full stack trace for errors
+  -x, --xtrace             Print each expression before evaluation
+
+      --install            Install the libyamlscript shared library
+      --upgrade            Upgrade both ys and libyamlscript
+
       --version            Print version and exit
   -h, --help               Print this help and exit
 ```
@@ -103,7 +119,7 @@ Also you can pipe the output of `ys --compile` to `ys --clj` to run the
 compiler's Clojure code ouput:
 
 ```bash
-$ ys -c -e 'say: 123' | ys -C
+$ ys -c -e 'say: 123' | ys -C -
 ```
 
 
@@ -137,10 +153,11 @@ To get this you could print it with `say.`
 You can also use the special `--print` (`-p`) option, which does exactly that
 (with less typing)..
 
-Finally there a 2 special debugging options:
+Finally there a 3 special debugging options:
 
-* `--debug` (`-X`) - Print a full stack trace for errors (more info)
-* `--debug-stage` (`-x`) - Display the result of a stage/stages
+* `--stack-trace` (`-S`) - Print a full stack trace for errors (more info)
+* `--debug-stage` (`-D`) - Display the result of a stage/stages
+* `-d` - Short for `--debug-stage=all` - Display the result of all stages
 
 The `--debug-stage` option is super useful for understanding exactly how
 YAMLScript code compiles to Clojure code.
@@ -148,7 +165,7 @@ YAMLScript code compiles to Clojure code.
 For example, to see the internal AST when compiling some YAMLScript:
 
 ```bash
-$ ys -c -e 'say: "Hello"' -xconstruct
+$ ys -c -e 'say: "Hello"' -Dconstruct
 *** construct output ***
 {:Lst [{:Sym say} {:Str "Hello"}]}
 
@@ -158,30 +175,31 @@ $ ys -c -e 'say: "Hello"' -xconstruct
 And to see all 7 compilation stages:
 
 ```bash
-$ ys -c -e 'say: "Hello"' -xall
-*** parse output ***
-({:+ "+MAP", :! "yamlscript/v0"}
+$ ys -c -e 'say: "Hello"' -d
+*** parse     *** 0.181519 ms
+({:+ "+MAP", :! "yamlscript/v0/code"}
  {:+ "=VAL", := "say"}
  {:+ "=VAL", :$ "Hello"}
- {:+ "-MAP"})
+ {:+ "-MAP"}
+ {:+ "-DOC"})
 
-*** compose output ***
-{:! "yamlscript/v0", :% [{:= "say"} {:$ "Hello"}]}
+*** compose   *** 0.005334 ms
+{:! "yamlscript/v0/code", :% [{:= "say"} {:$ "Hello"}]}
 
-*** resolve output ***
-{:ysm ({:ysx "say"} {:ysi "Hello"})}
+*** resolve   *** 0.055135 ms
+{:pairs [{:exp "say"} {:vstr "Hello"}]}
 
-*** build output ***
-{:ysm ({:Sym say} {:Str "Hello"})}
+*** build     *** 0.102548 ms
+{:pairs [{:Sym say} {:Str "Hello"}]}
 
-*** transform output ***
-{:ysm ({:Sym say} {:Str "Hello"})}
+*** transform *** 0.014468 ms
+{:pairs [{:Sym say} {:Str "Hello"}]}
 
-*** construct output ***
-{:Lst [{:Sym say} {:Str "Hello"}]}
+*** construct *** 0.048013 ms
+{:Top [{:Lst [{:Sym say} {:Str "Hello"}]}]}
 
-*** print output ***
-"(say \"Hello\")\n"
+*** print     *** 0.006561 ms
+"(say \"Hello\")"
 
 (say "Hello")
 ```
@@ -192,6 +210,3 @@ In the meantime, try out your new `ys` tool and see what you can do with it.
 The more you use it, the sharper it will get.
 
 I'll see you tomorrow for day 8 of YAMLScript Advent 2023!
-
-
-{% include "../../santa-secrets.md" %}

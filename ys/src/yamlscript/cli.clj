@@ -7,20 +7,22 @@
 (ns yamlscript.cli
   (:gen-class)
   (:require
-   ;; This goes first for pprint/graalvm patch (prevents binary bloating)
-   [yamlscript.compiler :as compiler]
-   [yamlscript.runtime :as runtime]
-   ;; For www debugging
-   [yamlscript.debug :refer [www]]
-   [babashka.process :refer [exec]]
+   [babashka.process :refer [check exec process]]
    [clj-yaml.core :as yaml]
    [clojure.data.json :as json]
+   [clojure.java.io :as io]
    [clojure.pprint :as pp]
    [clojure.set :as set]
    [clojure.string :as str]
-   [clojure.tools.cli :as cli]))
+   [clojure.stacktrace]
+   [clojure.tools.cli :as cli]
+   [yamlscript.common]
+   [yamlscript.compiler :as compiler]
+   [yamlscript.global :as global :refer [env]]
+   [yamlscript.runtime :as runtime])
+  (:refer-clojure))
 
-(def yamlscript-version "0.1.36")
+(def yamlscript-version "0.1.87")
 
 (def testing (atom false))
 
@@ -36,70 +38,84 @@
     (str "*** exit " n " ***")
     (System/exit n)))
 
-(defn die [& xs]
-  (binding [*out* *err*]
-    (println (apply str "Error: " xs))
-    (exit 1)))
+(defn err [e]
+  (let [prefix @global/error-msg-prefix
+        msg (if (instance? Throwable e)
+              (:cause (Throwable->map e))
+              e)]
+    (global/reset-error-msg-prefix!)
+    (binding [*out* *err*]
+      (print prefix)
+      (if (and (:stack-trace @global/opts) (instance? Throwable e))
+        (do
+          (clojure.stacktrace/print-stack-trace e)
+          (flush))
+        (println (str/replace msg "java.lang.Exception: " "")))))
+  (exit 1))
 
 (defn todo [s & _]
-  (die "--" s " not implemented yet."))
-
-(defn daemon-thread [^Runnable f]
-  (.start (doto (new Thread f)
-            (.setDaemon true))))
-
-(defn get-stdin []
-  (let [stdin (promise)]
-    (daemon-thread #(do (Thread/sleep 500)
-                        (deliver stdin nil)))
-    (daemon-thread #(do (deliver stdin (slurp *in*))))
-    @stdin))
+  (err (str "--" s " not implemented yet.")))
 
 ;; ----------------------------------------------------------------------------
 (def to-fmts #{"json" "yaml" "edn"})
 
+(def stages
+  {"parse" true
+   "compose" true
+   "resolve" true
+   "build" true
+   "transform" true
+   "construct" true
+   "print" true})
+
 ;; See https://clojure.github.io/tools.cli/#clojure.tools.cli/parse-opts
 (def cli-options
   [;
-   ["-r" "--run"
-    "Compile and evaluate a YAMLScript file (default)"]
+   [nil "--run"
+    "Run a YAMLScript program file (default)"]
    ["-l" "--load"
-    "Output the evaluated YAMLScript value"]
+    "Output (compact) JSON of YAMLScript evaluation"]
    ["-e" "--eval YSEXPR"
-    "Evaluate a YAMLScript expression"
+    "Evaluate a YAMLScript expression
+                           multiple -e values joined by newline"
     :default []
     :update-fn conj
     :multi true]
 
    ["-c" "--compile"
     "Compile YAMLScript to Clojure"]
-   ["-C" "--native"
+   ["-b" "--binary"
     "Compile to a native binary executable"]
-   [nil "--clj"
-    "Treat input as Clojure code"]
 
-   ["-m" "--mode MODE"
-    "Add a mode tag: code, data, or bare (only for --eval/-e)"
-    :validate
-    [#(some #{%1} ["c" "code", "d" "data", "b" "bare"])
-     (str "must be one of: c, code, d, data, b or bare")]]
    ["-p" "--print"
     "Print the result of --run in code mode"]
-
    ["-o" "--output FILE"
-    "Output file for --load, --compile or --native"]
-   ["-t" "--to FORMAT"
-    "Output format for --load"
+    "Output file for --load, --compile or --binary"]
+   ["-s" "--stream"
+    "Output all results from a multi-document stream"]
+
+   ["-T" "--to FORMAT"
+    "Output format for --load:
+                             json, yaml, edn"
     :validate
     [#(contains? to-fmts %1)
      (str "must be one of: " (str/join ", " to-fmts))]]
-
    ["-J" "--json"
-    "Output JSON for --load"]
+    "Output (pretty) JSON for --load"]
    ["-Y" "--yaml"
     "Output YAML for --load"]
    ["-E" "--edn"
     "Output EDN for --load"]
+   ["-U" "--unordered"
+    "Mappings don't preserve key order (faster)"]
+
+   ["-m" "--mode MODE"
+    "Add a mode tag: code, data, or bare (for -e)"
+    :validate
+    [#(some #{%1} ["c" "code", "d" "data", "b" "bare"])
+     (str "must be one of: c, code, d, data, b or bare")]]
+   ["-C" "--clojure"
+    "Treat input as Clojure code"]
 
    #_["-R" "--repl"
       "Start an interactive YAMLScript REPL"]
@@ -108,38 +124,47 @@
    #_["-K" "--kill"
       "Stop the nREPL server"]
 
-   ["-x" "--debug-stage STAGE"
-    "Display the result of stage(s)"
+   ["-d" nil
+    "Debug all compilation stages"
+    :id :debug-stage
+    :update-fn (fn [_] stages)]
+   ["-D" "--debug-stage STAGE"
+    "Debug a specific compilation stage:
+                             parse, compose, resolve, build,
+                             transform, construct, print
+                           can be used multiple times"
     :default {}
-    :update-fn #(if (= "all" %2) compiler/stages (assoc %1 %2 true))
+    :update-fn #(if (= "all" %2) stages (assoc %1 %2 true))
     :multi true
     :validate
-    [#(or (contains? compiler/stages %1) (= %1 "all"))
+    [#(or (contains? stages %1) (= %1 "all"))
      (str "must be one of: "
-       (str/join ", " (keys compiler/stages))
+       (str/join ", " (keys stages))
        " or all")]]
-   ["-X" nil
-    "Same as '-x all'"
-    :id :debug-stage
-    :update-fn (fn [_] compiler/stages)]
    ["-S" "--stack-trace"
     "Print full stack trace for errors"]
+   ["-x" "--xtrace"
+    "Print each expression before evaluation"]
+
+   [nil "--install"
+    "Install the libyamlscript shared library"]
+   [nil "--upgrade"
+    "Upgrade both ys and libyamlscript"]
 
    [nil "--version"
     "Print version and exit"]
    ["-h" "--help"
     "Print this help and exit"]])
 
-(defn do-error [errs help]
+(defn do-error [errs]
   (let [errs (if (> (count errs) 1)
                (apply list "Error(s):" errs)
                errs)]
-    (println (str/join "\n* " errs))
-    (println (str "\n" help)))
+    (println (str (str/join "\n* " errs) "\n")))
   (exit 1))
 
 (declare add-ys-mode-tag)
-(defn get-native-info [opts args]
+(defn get-binary-info [opts args]
   (let [in-file (when (seq args) (first args))
         code (when (seq (:eval opts))
                (str
@@ -148,169 +173,223 @@
                    (str/join "\n"))
                  "\n"))]
     (or in-file code
-      (die "No input file specified"))
-    (let [in-file (if code "EVAL.ys" in-file)]
+      (err "No input file specified"))
+    (let [in-file (if code "NO-NAME.ys" in-file)]
       (or (re-find #"\.ys$" in-file)
-        (die "Input file must end in .ys"))
+        (err "Input file must end in .ys"))
       [in-file code])))
 
-(defn do-native [opts args]
+(defn get-ys-sh-path []
   (let [path (-> (java.lang.ProcessHandle/current) .info .command .get)
         cmd (if (re-find #"-openjdk-" path)
               (str "ys-sh-" yamlscript-version)
               (str/replace path #"/[^/]*$"
-                (str "/ys-sh-" yamlscript-version)))
-        [in-file code] (get-native-info opts args)
+                (str "/ys-sh-" yamlscript-version)))]
+    [cmd path]))
+
+(defn do-install [_opts _args]
+  (let [[cmd] (get-ys-sh-path)]
+    (exec cmd "--install")))
+
+(defn do-upgrade [_opts _args]
+  (let [[cmd] (get-ys-sh-path)]
+    (exec cmd "--upgrade")))
+
+(defn do-binary [opts args]
+  (let [[cmd path] (get-ys-sh-path)
+        [in-file code] (get-binary-info opts args)
         out-file (some identity
                    [(:output opts)
                     (and in-file (str/replace in-file #"\.ys$" ""))])
         path (if (re-find #"-openjdk-" path) "ys" path)]
-    #_(print
-      (str
-        (format "Compiling '%s' -> '%s'\n\n" in-file out-file)
-        (format "$ %s --compile-to-native %s %s %s\n\n"
-          cmd in-file out-file yamlscript-version)))
     (flush)
     (exec {:extra-env {"YS_BIN" path
                        "YS_CODE" (or code "")}}
-      cmd "--compile-to-native"
+      cmd "--compile-to-binary"
       in-file out-file yamlscript-version)))
 
 (defn do-version []
   (println (str "YAMLScript " yamlscript-version)))
 
-(def help-heading
-  "ys - The YAMLScript (YS) Command Line Tool
+(def help-heading (str "
+ys - The YAMLScript (YS) Command Line Tool - v" yamlscript-version "
 
-Usage: ys [options] [file]
+Usage: ys [<option...>] [<file>]
 
 Options:
-")
+
+"))
 
 (defn do-help [help]
   (let [help (str/replace help #"^" help-heading)
         help (str/replace help #"\[\]" "  ")
         help (str/replace help #"\{\}" "  ")
         ;; Insert blank lines in help text
-        help (str/replace help #"\n  (-[comJRx])" "\n\n  $1")
+        help (str/replace help #"\n  (-[cmpTd])" "\n\n  $1")
         help (str/replace help #"\n  (.*--version)" "\n\n  $1")
+        help (str/replace help #"\n  (.*--install)" "\n\n  $1")
         help (str/replace help #"    ([A-Z])" #(second %1))]
     (println help)))
 
 (defn add-ys-mode-tag [opts code]
-  (let [mode (:mode opts)]
-    (str/join ""
-      [(cond
-         (or (str/starts-with? code "--- !yamlscript/v0")
-           (str/starts-with? code "!yamlscript/v0")
-           (:clj opts))
-         ""
-         (or (= "c" mode) (= "code" mode))
-         "--- !yamlscript/v0/code\n"
-         (or (= "d" mode) (= "data" mode))
-         "--- !yamlscript/v0/data\n"
-         (or (= "b" mode) (= "bare" mode))
-         "--- !yamlscript/v0/bare\n"
-         (:load opts)
-         ""
-         :else
-         "--- !yamlscript/v0\n")
-       code])))
+  (let [mode (:mode opts)
+        code (str/join ""
+               [(cond
+                  (or (str/starts-with? code "--- !yamlscript/v0")
+                    (str/starts-with? code "!yamlscript/v0")
+                    (:clojure opts))
+                  ""
+                  (or (= "c" mode) (= "code" mode))
+                  "--- !yamlscript/v0/code\n"
+                  (or (= "d" mode) (= "data" mode))
+                  "--- !yamlscript/v0/data\n"
+                  (or (= "b" mode) (= "bare" mode))
+                  "--- !yamlscript/v0/bare\n"
+                  (:load opts)
+                  ""
+                  :else
+                  "--- !yamlscript/v0\n")
+                code])
+        code (if (or (:clojure opts)
+                   (re-find #"^---(?:[ \n]|$)" code))
+               code
+               (str "---\n" code))]
+    code))
 
-(defn get-code [opts args]
-  (cond
-    (seq (:eval opts))
-    [(str
-       (->> opts
-         :eval
-         (str/join "\n")
-         (add-ys-mode-tag opts))
-       "\n")
-     "/EVAL" args]
-    ,
-    (seq args)
-    (let [[file & args] args
-          code (str
-                 (if (= "-" file)
-                   (slurp *in*)
-                   (slurp file))
-                 "\n")]
-      [code file args])
-    ,
-    (:stdin opts)
-    [(:stdin opts) "/STDIN" args]
-    ,
-    :else
-    (let [code (get-stdin)]
-      (if code
-        [code "/STDIN" args]
-        (do
-          (binding [*out* *err*]
-            (println "Warning: No input found."))
-          ["" "EMPTY" args])))))
-
+(defn get-code [opts args argv]
+  (let [[file & args] args
+        args (concat args argv)
+        f-code (when file
+                 (str
+                   (if (= "-" file)
+                     (slurp *in*)
+                     (slurp file))
+                   "\n"))
+        e-code (when (seq (:eval opts))
+                 (str
+                   (->> opts
+                     :eval
+                     (str/join "\n")
+                     (#(if (not (re-find #"\n" %1))
+                         (cond
+                           (re-find #"^\.[\w\$]" %1)
+                           (str (if (:stream opts)
+                                  "stream()"
+                                  "stream().last()") %1)
+                           ,
+                           (re-find #"^\:\w" %1)
+                           , (str "stream()"
+                               (str/replace %1 #"^:([-\w]+)" ".$1()"))
+                           :else %1)
+                         %1))
+                     (add-ys-mode-tag opts))
+                   "\n"))
+        opts (if (and e-code f-code)
+               (assoc opts :load true)
+               opts)
+        _ (or e-code f-code
+            (binding [*out* *err*]
+              (println "Warning: No input found.")))
+        code (str f-code e-code)
+        file (or file "NO-NAME")]
+    [code file args (:load opts)]))
 
 (defn compile-code [code opts]
-  (if (:clj opts)
+  (if (:clojure opts)
     code
     (try
-      (if (empty? (:debug-stage opts))
-        (compiler/compile code)
-        (binding [compiler/*debug* (:debug-stage opts)]
-          (compiler/compile-debug code)))
-      (catch Exception e (die e opts)))))
+      (if (:debug-stage opts)
+        (compiler/compile-with-options code)
+        (compiler/compile code))
+      (catch Exception e
+        (global/reset-error-msg-prefix! "Compile error: ")
+        (err e)))))
+
+(defn get-compiled-code [opts args argv]
+  (let [[code file args load] (get-code opts args argv)
+        code (if code (compile-code code opts) "")]
+    [code file args load]))
 
 (def json-options
   {:escape-unicode false
    :escape-js-separators false
-   :escape-slash false})
+   :escape-slash false
+   :key-fn (fn [x]
+             (let [t (type x)]
+               (if (contains? #{clojure.lang.Symbol
+                                Double
+                                Float
+                                Integer
+                                Long
+                                String} t)
+                 (str x)
+                 (if (= t clojure.lang.Keyword)
+                   (subs (str x) 1)
+                   (throw (Exception.
+                            (str "Unsupported key type '" t "'\n"
+                              "Key = '" x "'")))))))})
 
-(defn do-run [opts args]
-  (try
-    (let [[code file args] (get-code opts args)
-          clj (compile-code code opts)
-          result (runtime/eval-string clj file args)]
-      (if (:print opts)
-        (pp/pprint result)
-        (when (and (:load opts) (not (= "" clj)))
-          (case (:to opts)
-            "yaml" (println
-                     (str/trim-newline
-                       (yaml/generate-string
-                         result
-                         :dumper-options {:flow-style :block})))
-            "json" (json/pprint result json-options)
-            "edn"  (pp/pprint result)
-            ,      (println (json/write-str result json-options))))))
-    (catch Exception e
-      (let [{:keys [cause data trace]} (Throwable->map e)
-            {:keys [file line column]} data
-            stack-trace (:stack-trace opts)
-            msg (if stack-trace
-                  (with-out-str
-                    (pp/pprint
-                        {:stack-trace true
-                         :cause cause
-                         :file file
-                         :line line
-                         :column column
-                         :trace trace}))
-                  (str cause "\n"
-                    (if (seq file)
-                      (str
-                        "  in file '" file "'"
-                        " line " line
-                        " column " column "\n")
-                      "")))]
-        (die msg)))))
+(defn clojure-format [clojure formatter]
+  (let [out (try
+              (:out
+               (check
+                 (process {:in clojure
+                           :out :string
+                           :err *err*}
+                   formatter)))
+              (catch Exception e
+                (global/reset-error-msg-prefix!
+                  (str "Compiler formatter error in '" formatter "':\n"))
+                (err e)))]
+    out))
+
+(defn pretty-clojure [code]
+  (str/trimr
+    (let [code (compiler/pretty-format code)]
+      (if (env "YS_FORMATTER")
+        (let [formatter (env "YS_FORMATTER")]
+          (if formatter
+            (clojure-format code formatter)
+            code))
+        code))))
 
 (defn do-compile [opts args]
-  (let [[code _ _ #_file #_args] (get-code opts args)]
-    (-> code
-      (compile-code opts)
-      str/trim-newline
-      compiler/pretty-format
-      println)))
+  (let [[code _ _ #_file #_args] (get-compiled-code opts args [])
+        clojure (pretty-clojure code)]
+    (println clojure)
+    (System/exit 0)))
+
+(def line (str (str/join (repeat 80 "-")) "\n"))
+
+(defn do-run [opts args argv]
+  (try
+    (let [[code file args load] (get-compiled-code opts args argv)
+          _ (when (env "YS_SHOW_COMPILE")
+              (eprint (str line (pretty-clojure code) "\n" line)))
+          result (runtime/eval-string code file args)
+          results (if (and (:stream opts) (or load
+                                            (seq (:eval opts))))
+                    @global/stream-values
+                    [result])]
+      (if (:print opts)
+        (pp/pprint result)
+        (when (and load (not (= "" code)))
+          (doall
+            (for [result (remove nil? results)]
+              (case (:to opts)
+                "yaml" (println
+                         (str
+                           (when (> (count results) 1) "---\n")
+                           (str/trim-newline
+                             (yaml/generate-string
+                               result
+                               :dumper-options {:flow-style :block}))))
+                "json" (json/pprint result json-options)
+                "edn"  (pp/pprint result)
+                ,      (println (json/write-str result json-options))))))))
+    (catch Exception e
+      (global/reset-error-msg-prefix! "Runtime error:\n")
+      (err e))))
 
 (defn do-repl [opts]
   (todo "repl" opts))
@@ -324,25 +403,25 @@ Options:
 (defn do-kill [opts args]
   (todo "kill" opts args))
 
-(defn elide-empty [opt opts]
-  (if (empty? (get opts opt))
-    (dissoc opts opt)
-    opts))
+(defn elide-empty [opts & keys]
+  (reduce
+    (fn [opts key]
+      (if (empty? (key opts))
+        (dissoc opts key)
+        opts))
+    opts keys))
 
-(defn do-default [opts args help]
+(def env-opts
+  #{:unordered :print :stack-trace :xtrace})
+
+(defn do-default [opts args argv help]
   (if (or
-        (seq (elide-empty
-               :eval
-               (elide-empty :debug-stage opts)))
+        (seq (apply dissoc
+               (elide-empty opts :eval :debug-stage)
+               env-opts))
         (seq args))
-    (do-run opts args)
-    (if (let [stdin (get-stdin)
-              opts (assoc opts :stdin stdin)]
-          (when stdin
-            (do-run opts args))
-          stdin)
-      true
-      (do-help help))))
+    (do-run opts args argv)
+    (do-help help)))
 
 (defn mutex [opts keys]
   (let [omap (reduce #(if (%2 opts)
@@ -378,11 +457,14 @@ Options:
           " one of ...")))))
 
 (def all-opts
-  #{:run :load :compile :eval
-    :clj :mode :print :output
-    :to :json :yaml :edn
-    :repl :nrepl :kill
-    :stack-trace :debug-stage
+  #{:run :load :eval
+    :compile :binary
+    :print :output :stream
+    :to :json :yaml :edn :unordered
+    :mode :clojure
+    ;:repl :nrepl :kill
+    :debug-stage :stack-trace :xtrace
+    :install :upgrade
     :version :help})
 
 (def action-opts
@@ -403,8 +485,7 @@ Options:
   #{:version :help})
 
 (defn validate-opts [opts]
-  (let [opts (elide-empty :eval opts)
-        opts (elide-empty :debug-stage opts)]
+  (let [opts (elide-empty opts :eval :debug-stage)]
     (or
       (mutex opts action-opts)
       (mutex opts format-opts)
@@ -416,43 +497,78 @@ Options:
       (mutex1 opts :print (set/difference action-opts #{:run}))
       (mutex1 opts :to (set/difference action-opts #{:load :compile})))))
 
+(defn do-main [opts args argv help error errs]
+  (if error
+    (do-error [(str "Error: " error)])
+    (if (seq errs)
+      (do-error errs)
+      (condp #(%1 %2) opts
+        :help (do-help help)
+        :version (do-version)
+        :install (do-install opts args)
+        :upgrade (do-upgrade opts args)
+        :binary (do-binary opts args)
+        :run (do-run opts args argv)
+        :compile (do-compile opts args)
+        :load (do-run opts args argv)
+        :repl (do-repl opts)
+        :connect (do-connect opts args)
+        :kill (do-kill opts args)
+        :nrepl (do-nrepl opts args)
+        (do-default opts args argv help)))))
+
 (defn -main [& args]
-  (let [options (cli/parse-opts args cli-options)
+  (global/reset-env nil)
+
+  (let [[args argv] (if (and (seq args) (not (re-find #"^-" (first args))))
+                      [[(first args)] (cons "--" (rest args))]
+                      (split-with #(not= "--" %1) args))
+        options (cli/parse-opts args cli-options)
         {opts :options
          args :arguments
          help :summary
          errs :errors} options
+        argv (rest argv)
         error (validate-opts opts)
+        opts (if (env "YS_FORMAT") (assoc opts :to (env "YS_FORMAT")) opts)
+        opts (if (env "YS_LOAD") (assoc opts :load true) opts)
         opts (if (:json opts) (assoc opts :to "json") opts)
         opts (if (:yaml opts) (assoc opts :to "yaml") opts)
         opts (if (:edn opts) (assoc opts :to "edn") opts)
-        opts (if (:to opts) (assoc opts :load true) opts)]
-    (cond
-      error (do-error [(str "Error: " error)] help)
-      (seq errs) (do-error errs help)
-      (:help opts) (do-help help)
-      (:version opts) (do-version)
-      (:native opts) (do-native opts args)
-      (:run opts) (do-run opts args)
-      (:load opts) (do-run opts args)
-      (:compile opts) (do-compile opts args)
-      (:repl opts) (do-repl opts)
-      (:connect opts) (do-connect opts args)
-      (:kill opts) (do-kill opts args)
-      (:nrepl opts) (do-nrepl opts args)
-      :else (do-default opts args help))))
+        opts (if (and (not (:mode opts)) (seq (:eval opts)))
+               (assoc opts :mode "code") opts)
+
+        opts (if (env "YS_OUTPUT")
+               (assoc opts :output (env "YS_OUTPUT")) opts)
+        out (:output opts)
+        opts (if (env "YS_STREAM")
+               (assoc opts :stream (env "YS_STREAM")) opts)
+        opts (if (and
+                   out
+                   (re-find #"\.(?:yml|yaml|json|edn)$" out)
+                   (not (:to opts)))
+               (let [to (str/replace out #".*\.(\w+)$" "$1")
+                     to (if (= "yml" to) "yaml" to)]
+                 (assoc opts :to to))
+               opts)
+        opts (if (:to opts) (assoc opts :load true) opts)
+        opts (if (env "YS_PRINT") (assoc opts :print true) opts)
+        opts (if (and (env "YS_PRINT_EVAL")
+                   (seq (:eval opts))) (assoc opts :print true) opts)
+        opts (if (env "YS_STACK_TRACE") (assoc opts :stack-trace true) opts)
+        opts (if (env "YS_UNORDERED") (assoc opts :unordered true) opts)
+        opts (if (env "YS_XTRACE") (assoc opts :xtrace true) opts)]
+
+    (reset! global/opts opts)
+
+    (when (env "YS_SHOW_OPTS")
+      (pp/pprint @global/opts))
+
+    (if out
+      (with-open [out (io/writer out)]
+        (binding [*out* out]
+          (do-main opts args argv help error errs)))
+      (do-main opts args argv help error errs))))
 
 (comment
-  www
-  (-main)
-  (-main
-    "-e" "say: 123"
-    ;"--run"
-    ;"--load"
-    ;"--to=json"
-    ;"--compile"
-    ; "--mode=code"
-    ;"--help"
-    ; "-e" "say: 123"
-    #__)
   )

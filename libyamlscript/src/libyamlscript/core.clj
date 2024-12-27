@@ -5,12 +5,35 @@
 
 (ns libyamlscript.core
   (:require
-   [yamlscript.compiler :as ys]
-   [yamlscript.runtime :as run]
    [clojure.data.json :as json]
-   [sci.core :as sci])
+   [sci.core :as sci]
+   [yamlscript.common]
+   [yamlscript.compiler :as compiler]
+   [yamlscript.runtime :as runtime])
   (:gen-class
-   :methods [^{:static true} [loadYsToJson [String] String]]))
+   :methods [^:static [loadYsToJson [String] String]]))
+
+(declare json-write-str error-map debug)
+
+(defn -loadYsToJson
+  "Convert a YAMLScript code string to Clojure, eval the Clojure code with
+  SCI, encode the resulting value as JSON and return the JSON string."
+  [^String ys-str]
+  (debug "CLJ libyamlscript load - input string:" ys-str)
+  (let [resp (sci/binding [sci/out *out*]
+               (try
+                 (->> ys-str
+                   compiler/compile
+                   runtime/eval-string
+                   (assoc {} :data)
+                   json-write-str)
+
+                 (catch Exception e
+                   (-> e
+                     error-map
+                     json-write-str))))]
+    (debug "CLJ libyamlscript load - response string:" resp)
+    resp))
 
 (defn json-write-str [data]
   (json/write-str
@@ -25,22 +48,10 @@
              :type (get-in err [:via 0 :type])
              :trace (get-in err [:trace])}}))
 
-(defn -loadYsToJson
-  "Convert a YAMLScript code string to Clojure, eval the Clojure code with
-  SCI, encode the resulting value as JSON and return the JSON string."
-  [^String ys-str]
-  (sci/binding [sci/out *out*]
-    (try
-      (->> ys-str
-        ys/compile
-        run/eval-string
-        (assoc {} :data)
-        json-write-str)
-
-      (catch Exception e
-        (->> e
-          error-map
-          json-write-str)))))
+(defn debug [& msg]
+  (when (System/getenv "LIBYAMLSCRIPT_DEBUG")
+    (binding [*out* *err*]
+      (apply println msg))))
 
 (comment
   (-loadYsToJson "!yamlscript/v0/data\nsay: 42")

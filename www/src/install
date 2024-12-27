@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 
+[ -z "$BASH" ] && {
+  echo "This script must be run with 'bash' instead of '$0'." >&2
+  exit 1
+}
+
 [[ ${DEBUG-} == 1 ]] && set -x
 
 set -e -u -o pipefail
 
-LIBYAMLSCRIPT_VERSION=0.1.36
+LIBYAMLSCRIPT_VERSION=0.1.87
 VERSION=${VERSION:-$LIBYAMLSCRIPT_VERSION}
+export VERSION
 
 main() (
   setup "$@"
@@ -36,10 +42,37 @@ install() (
 
     make -s --no-print-directory -C "$name"-* install
   )
+
+  if [[ $name == ys &&
+        $PATH != *"$PREFIX"/bin*
+     ]]; then
+    echo
+    echo "  *** WARNING: '$PREFIX/bin' is not in your PATH yet ***"
+    echo
+  fi
+
+  if [[ $name == libyamlscript &&
+        $PREFIX != "$HOME/.local" &&
+        $PREFIX != /usr/local &&
+        ${LD_LIBRARY_PATH-} != *"$PREFIX"/lib*
+     ]]; then
+    echo
+    echo "  *** WARNING: '$PREFIX/lib' is not in your LD_LIBRARY_PATH yet ***"
+    echo
+  fi
 )
 
 setup() {
   vers=$VERSION
+
+  if [[ ! ${PREFIX-} ]]; then
+    if [[ $(id -u) == 0 ]]; then
+      PREFIX=/usr/local
+    else
+      PREFIX=$HOME/.local
+    fi
+  fi
+  export PREFIX
 
   if [[ $OSTYPE == *darwin* ]]; then
     os=macos
@@ -64,7 +97,7 @@ setup() {
   fi
 
   unset -v dir
-  
+
   trap '[[ ${dir-} ]] && rm -fr -- "$dir"' EXIT
 
   dir=$(mktemp -d)

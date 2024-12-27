@@ -1,7 +1,7 @@
 YAMLScript
 ==========
 
-Program in YAML
+Program in YAML — Code is Data
 
 
 ## About YAMLScript
@@ -10,14 +10,22 @@ YAMLScript is a functional programming language with a stylized YAML syntax.
 
 YAMLScript can be used for:
 
-* Writing new programs and applications
+* Extending YAML config files with functional transformations, external data
+  access, string interpolation; anything a programming language has access to
+* Writing new programs, applications, automation scripts
   * Run with `ys file.ys`
   * Or compile to binary with `ys -C file.ys`
 * Writing reusable shared libraries
   * Bindable to almost any programming language
-* Using as a YAML loader module in many programming languages
-  * Plain / existing YAML files
-  * YAML files with new functional magics
+* As a YAML loader module in many programming languages
+  * Load plain / existing YAML (or JSON) files
+  * Load YAML files with embedded YAMLScript functionality
+
+Most existing YAML files in the wild are already valid YAMLScript.
+
+> YAMLScript is now an official language on the [Exercism](
+  https://exercism.org/tracks) (free) language learning site!
+  It's a great way to learn how to program in YAMLScript.
 
 
 ### Run or Load?
@@ -27,7 +35,6 @@ When a YAMLScript program is run, it is executed as a normal program.
 When a YAMLScript program is loaded, it evaluates to a JSON-model data
 structure.
 
-Most existing YAML files in the wild are already valid YAMLScript programs.
 If you have a valid YAML ([1.2 Core Schema](
 https://yaml.org/spec/1.2.2/#103-core-schema)) file that doesn't use custom
 tags, and loads to a value expressible in JSON, then it is a valid YAMLScript
@@ -63,7 +70,7 @@ run programs written to a newer API version.
 
 There are two primary ways to use YAMLScript:
 
-* Using the `ys` command line runner / loader / compiler
+* Using the `ys` command line runner / loader / compiler / installer
 * Using a YAMLScript library in your own programming language
 
 The `ys` command line tool is the easiest way to get started with YAMLScript.
@@ -73,8 +80,10 @@ It has these main modes of operation:
 * `ys --run <file>` - Same as above but explicit
 * `ys --load <file>` - Load a YAMLScript program
 * `ys --compile <file>` - Compile a YAMLScript program to Clojure
+* `ys --binary <file>` - Compile YAMLScript to a native binary executable
 * `ys --eval '<expr>'` - Evaluate a YAMLScript expression string
-* `ys --repl` - Start an interactive YAMLScript REPL session
+* `ys --install` - Install the latest libyamlscript shared library
+* `ys --upgrade` - Upgrade ys and libyamlscript
 * `ys --help` - Show the `ys` command help
 
 You can also use YAMLScript as a library in your own programming language.
@@ -116,6 +125,11 @@ language, giving you a great and consistent YAML experience everywhere.
 
 At this early stage, YAMLScript has bindings for these programming languages:
 
+* [Clojure](https://clojars.org/org.yamlscript/clj-yamlscript)
+* [Go](https://github.com/yaml/yamlscript-go),
+* [Java](https://clojars.org/org.yamlscript/yamlscript)
+* [Julia](https://juliahub.com/ui/Packages/General/YAMLScript)
+* [NodeJS](https://www.npmjs.com/package/@yaml/yamlscript)
 * [Perl](https://metacpan.org/pod/YAMLScript)
 * [Python](https://pypi.org/project/yamlscript/)
 * [Raku](https://raku.land/zef:ingy/YAMLScript)
@@ -137,7 +151,7 @@ it commonly doesn't look like one syntactically.
 
 Typically Clojure produces Java bytecode that is run on the JVM, but for
 YAMLScript there is no Java or JVM involved.
-In testing so far, YAMLScript programs tend to run as faster or faster than
+In testing so far, YAMLScript programs tend to run as fast or faster than
 equivalent Perl or Python programs.
 
 For getting started with YAMLScript, you don't need to know anything about Lisp
@@ -156,7 +170,7 @@ You can try out the latest version of the `ys` command without actually
 If you run this command in Bash or Zsh:
 
 ```
-. <(curl -sSL yamlscript.org/try-ys)
+. <(curl https://yamlscript.org/try-ys)
 ```
 
 it will install the `ys` command in a temporary directory (under `/tmp/`) and
@@ -170,17 +184,45 @@ Try it out!
 
 ## Installing YAMLScript
 
-At the moment, the best way to install YAMLScript is to build it from source,
-but see the section "Installing YAMLScript Releases" below.
+You can install YAMLScript's `ys` interpreter and/or its `libyamlscript.so`
+shared library from pre-built binaries or building from source.
+Both are very easy to do.
 
-This is very easy to do because the YAMLScript build process has very few
-dependencies:
+
+### Installing YAMLScript Pre-built Binary Releases
+
+YAMLScript ships pre-built binaries for each release version [here](
+https://github.com/yaml/yamlscript/releases).
+
+To install a latest release for your machine platform, try:
+
+```bash
+$ curl https://yamlscript.org/install | bash
+```
+
+Make sure `~/.local/bin` is in your `PATH` environment variable.
+
+You can use the following environment variables to control the installation:
+
+* `PREFIX=...` - The directory to install to. Default: `~/.local`
+* `VERSION=...` - The YAMLScript version to install. Default: `0.1.87`
+* `BIN=1` - Only install the `PREFIX/bin/ys` command line tool.
+* `LIB=1` - Only install the `PREFIX/lib/libyamlscript` shared library.
+* `DEBUG=1` - Print the Bash commands that are being run.
+
+Once you have installed the `ys` command you can upgrade to a bin binary
+version with `ys --upgrade`.
+
+
+### Installing YAMLScript from Source
+
+This is very easy to build and install YAMLScript from its source code because
+the YAMLScript build process has very few dependencies:
 
 * `bash` (your interactive shell can be any shell)
 * `curl`
 * `git`
 * `make`
-* `zlib-dev` (need this installed on Linux)
 
 To install the `ys` command line tool, and `libyamlscript` shared library,
 run these commands:
@@ -189,12 +231,15 @@ run these commands:
 git clone https://github.com/yaml/yamlscript
 cd yamlscript
 make build
-sudo make install
+make install
 ```
 
+That's it!
+
 The `make install` command will install `ys` and `libyamlscript` to
-`/usr/local/bin` and `/usr/local/lib` respectively, by default.
-This means that you will need to run `make install` with `sudo` or as root.
+`~/.local/bin` and `~/.local/lib` respectively, by default.
+If run as root they will default to `/usr/local/bin` and `/usr/local/lib`.
+
 To install to a different location, run `make install PREFIX=/some/path`.
 
 > Notes:
@@ -203,31 +248,6 @@ To install to a different location, run `make install PREFIX=/some/path`.
 > * The build can take several minutes (`native-image` is slow)
 > * If you install to a custom location, you will need to add that location to
 >   your `PATH` and `LD_LIBRARY_PATH` environment variables
-
-
-### Installing YAMLScript Releases
-
-YAMLScript now ships binary releases for some platforms [here](
-https://github.com/yaml/yamlscript/releases).
-
-To install a latest release for your machine platform, try:
-
-```bash
-$ curl https://yamlscript.org/install | PREFIX=~/.local bash
-```
-
-Make sure `~/.local/bin` is in your `PATH` environment variable.
-
-> The default `PREFIX` is `/usr/local`, which likely requires `sudo bash` to run
-the above command.
-
-You can use the following environment variables to control the installation:
-
-* `PREFIX=...` - The directory to install to. Default: `/usr/local`
-* `VERSION=...` - The YAMLScript version to install. Default: `0.1.36`
-* `BIN=1` - Only install the `PREFIX/bin/ys` command line tool.
-* `LIB=1` - Only install the `PREFIX/lib/libyamlscript` shared library.
-* `DEBUG=1` - Print the Bash commands that are being run.
 
 
 ### Installing a YAMLScript Binding for a Programming Language
@@ -246,8 +266,8 @@ installer to install the latest shared library version.
 So for Python you would:
 
 ```bash
-pip install yamlscript
-curl https://yamlscript.org/install | sudo LIB=1 bash
+$ pip install yamlscript
+$ ys --install
 ```
 
 The Perl installation process can automatically install the shared library, so
@@ -256,9 +276,6 @@ you can just do:
 ```bash
 cpanm YAMLScript
 ```
-
-Eventually, the YAMLScript binding installation process will become simpler and
-more consistent across all languages.
 
 
 ## The YAMLScript Repository
@@ -303,27 +320,23 @@ https://github.com/yaml/yamlscript/tree/main/Contributing.md) for more details.
 
 ## YAMLScript Resources
 
-> Note: The documentation linked to below is out of date, but should give you a
-decent idea of what YAMLScript is about.
-It will be rewritten soon.
-
-* [The YAMLScript Blog](https://yamlscript.org/blog/)
+* [YAMLScript Documentation](https://yamlscript.org/doc/)
+* [YAMLScript Blog](https://yamlscript.org/blog/)
+* [Learn YAMLScript at Exercism](http://exercism.org/tracks/yamlscript)
 * [Example YAMLScript Programs on RosettaCode.org](
   https://rosettacode.org/wiki/Category:YAMLScript)
-* [An early YAMLScript Presentation Video](
-  https://www.youtube.com/watch?v=9OcFh-HaCyI)
-* [Old Perl YAMLScript Implementation Documentation](
-  https://metacpan.org/pod/Test::More::YAMLScript) (Out of date but informative)
 
 
 ## Authors
 
 * [Ingy döt Net](https://github.com/ingydotnet) - Creator / Lead
 * [Ven de Thiel](https://github.com/vendethiel) - Language design
-* [tony-o](https://github.com/tony-o) - Raku
-* [Ethiraric](https://github.com/Ethiraric) - Rust
-* [José Joaquín Atria](https://github.com/jjatria) - Perl
-* [Delon R.Newman](https://github.com/delonnewman) - Ruby
+* [tony-o](https://github.com/tony-o) - Raku binding
+* [Ethiraric](https://github.com/Ethiraric) - Rust binding
+* [José Joaquín Atria](https://github.com/jjatria) - Perl binding
+* [Delon R.Newman](https://github.com/delonnewman) - Clojure, Java, Ruby bindings
+* [Andrew Pam](https://github.com/xanni) - Go binding
+* [Kenta Murata](https://github.com/mrkn) - Julia binding
 
 
 ## Copyright and License

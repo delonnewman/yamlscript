@@ -1,29 +1,28 @@
 #------------------------------------------------------------------------------
-# Set Clojure / Java specific variables:
+# Set Clojure specific variables:
 #------------------------------------------------------------------------------
 
-export JAVA_HOME := $(GRAALVM_HOME)
-export PATH := $(GRAALVM_HOME)/bin:$(PATH)
+YAMLSCRIPT_CORE_INSTALLED := \
+  $(MAVEN_REPOSITORY)/yamlscript/core/maven-metadata-local.xml
 
-YAMLSCRIPT_LANG_INSTALLED := \
-  $(HOME)/.m2/repository/yamlscript/core/maven-metadata-local.xml
 YAMLSCRIPT_CORE_SRC := \
-  ../core/src/yamlscript/*.clj \
-  ../core/src/ys/*.clj \
+  $(ROOT)/core/src/yamlscript/*.clj \
+  $(ROOT)/core/src/ys/*.clj \
 
 ifdef w
   export WARN_ON_REFLECTION := 1
 endif
 
 LEIN := $(BUILD_BIN)/lein
-LEIN_URL := https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein
+
+LEIN_URL := \
+  https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein
 
 LEIN_COMMANDS := \
   check \
   classpath \
   compile \
   deps \
-  deploy \
   run \
   show-profiles \
 
@@ -40,27 +39,28 @@ LEIN_REPL_OPTIONS := \
   update-in '[:repl-options,:nrepl-middleware]' \
     conj '["cider.nrepl/cider-middleware"]' -- \
 
+
 #------------------------------------------------------------------------------
 # Common Clojure Targets
 #------------------------------------------------------------------------------
 
 clean::
-	$(RM) pom.xml Dockerfile
+	$(RM) Dockerfile
 	$(RM) -r .lein-*
 	$(RM) -r reports/ target/
+
+realclean:: clean
 
 distclean:: nrepl-stop
 	$(RM) -r .calva/ .clj-kondo/ .cpcache/ .lsp/ .vscode/ .portal/
 
-$(LEIN): $(BUILD_BIN) $(GRAALVM_INSTALLED)
+$(LEIN): $(JAVA_INSTALLED) | $(BUILD_BIN)
 ifeq (,$(CURL))
 	$(error *** 'curl' is required but not installed)
 endif
 	$(CURL) -L -o $@ $(LEIN_URL)
 	chmod +x $@
 
-$(BUILD_BIN):
-	mkdir -p $@
 
 # Leiningen targets
 $(LEIN_COMMANDS):: $(LEIN)
@@ -69,23 +69,34 @@ $(LEIN_COMMANDS):: $(LEIN)
 deps-graph:: $(LEIN)
 	$< deps :tree
 
+
 # Build/GraalVM targets
 force:
-	$(RM) $(YAMLSCRIPT_LANG_INSTALLED)
+	$(RM) $(YAMLSCRIPT_CORE_INSTALLED)
 
-$(YAMLSCRIPT_LANG_INSTALLED): $(YAMLSCRIPT_CORE_SRC)
-	$(MAKE) -C ../core install
+$(YAMLSCRIPT_CORE_INSTALLED): $(YAMLSCRIPT_CORE_SRC)
+	$(MAKE) -C $(ROOT)/core install
 
-$(GRAALVM_INSTALLED): $(GRAALVM_DOWNLOAD)
-	tar xzf $<
-	mv graalvm-* $(GRAALVM_PATH)
-	touch $@
 
-$(GRAALVM_DOWNLOAD):
+# Maven targets
+
+$(MAVEN_DOWNLOAD):
 ifeq (,$(CURL))
 	$(error *** 'curl' is required but not installed)
 endif
-	$(CURL) -L -o $@ $(GRAALVM_URL)
+	$(CURL) -L -o $@ $(MAVEN_URL)
+
+$(MAVEN_INSTALLED): $(MAVEN_DOWNLOAD) | $(MAVEN_HOME)
+	(cd $(YS_TMP) && tar xzf $< )
+	touch $@
+
+$(MAVEN_HOME):
+	mkdir -p $@
+
+$(MAVEN_SETTINGS): $(ROOT)/common/maven-settings.xml
+	mkdir -p $(dir $@)
+	cp $< $@
+
 
 # REPL/nREPL management targets
 repl:: $(LEIN) repl-deps
@@ -95,6 +106,8 @@ ifneq (,$(wildcard .nrepl-pid))
 endif
 
 repl-deps::
+
+nrepl+: nrepl-stop nrepl
 
 nrepl: .nrepl-pid
 	@echo "nREPL server running on port $$(< .nrepl-port)"

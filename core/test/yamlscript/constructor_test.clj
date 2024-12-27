@@ -2,15 +2,15 @@
 ; This code is licensed under MIT license (See License for details)
 
 (ns yamlscript.constructor-test
-  #_(:use yamlscript.debug)
   (:require
    [clojure.edn :as edn]
-   [yamlscript.parser :as parser]
-   [yamlscript.composer :as composer]
-   [yamlscript.resolver :as resolver]
    [yamlscript.builder :as builder]
-   [yamlscript.transformer :as transformer]
+   [yamlscript.common]
+   [yamlscript.composer :as composer]
    [yamlscript.constructor :as constructor]
+   [yamlscript.parser :as parser]
+   [yamlscript.resolver :as resolver]
+   [yamlscript.transformer :as transformer]
    [yamltest.core :as test]))
 
 (test/load-yaml-test-files
@@ -19,15 +19,15 @@
    "test/compiler.yaml"]
   {:pick #(test/has-keys? [:yamlscript :construct] %1)
    :test (fn [test]
-           (->> test
+           (-> test
              :yamlscript
              parser/parse
              composer/compose
              resolver/resolve
              builder/build
              transformer/transform
-             constructor/construct))
+             constructor/construct-ast))
    :want (fn [test]
-           (->> test
+           (-> test
              :construct
              edn/read-string))})

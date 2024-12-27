@@ -1,0 +1,94 @@
+#!/usr/bin/env ys-0
+
+input-dir =: A(nil)
+
+DNE =: "<!-- DO NOT EDIT — THIS FILE WAS GENERATED -->\n\n"
+
+defn main(input-file):
+  dir =: fs-dirname(input-file):fs-abs
+  reset! input-dir: dir
+
+  fmt-file =: "$dir/fmt.ys"
+  when fs-f(fmt-file):
+    load: fmt-file
+
+  markdown =: input-file:process:trim
+
+  markdown =:
+    replace markdown:
+      /^(---\n(?s:.*?)\n---\n)\n*/
+      "$1\n$DNE"
+
+  markdown =:
+    if markdown.str/includes?(DNE):
+      markdown
+      (DNE + markdown)
+
+  say: markdown:trimr
+
+defn process(input-file):
+  input-file:
+    .load-markys()
+    .generate-markdown()
+    .triml()
+
+defn load-markys(file):
+  text =: file:fs-abs:slurp
+  fenced-re =: /(?s)(?:```markys:\S+\n.*?\n```\n)/
+  texts =: text.split(fenced-re)
+  fenced =: text.re-seq(fenced-re)
+  fix =: fenced.# < texts.#
+  fenced =:
+    if fix:
+      (vec(fenced) + [''])
+      fenced
+  all =: texts.interleave(fenced)
+  if fix:
+    drop-last(all)
+    all
+
+defn generate-markdown(data):
+  markdown =: ''
+  loop [section *sections] data, markdown markdown:
+    if section:
+      then:
+        markdown +=:
+          if section =~ /^```markys:/:
+            format-markys: section
+            trim: section
+        recur sections:
+          if empty?(markdown):
+            markdown
+            (markdown + "\n")
+      else: markdown
+
+defn format-markys(text):
+  type =: (text =~ /^```markys:(\S+)/).1
+  text .=: replace(/^```.*\n/ '')
+  yaml =: text.replace(/```\n\z/ '')
+  data =: yaml:ys/compile:eval-string
+  func =: value("fmt-$type") ||
+    die("Can't find function 'fmt-$type'")
+  call func: data
+
+defn get-path(file):
+  if-not fs-abs?(file):
+    fs-abs _ file: input-dir:D
+    else: file
+
+defn fmt-include(data):
+  input-file =: data.file:get-path
+  markdown =: process(input-file):lines
+  yank =: data.yank
+  markdown =:
+    if yank:
+      remove fn([s] re-find(qr(yank) s)): markdown
+      else: markdown
+  =>: +"\n\n" + join("\n" markdown) + "\n\n"
+
+defn indent(text n=2):
+  replace text:
+    /(?m)^(?=.)/
+    (' ' * n)
+
+# vim: ft=yaml sw=2 lisp:

@@ -53,7 +53,7 @@
 - name: Folded style string
   yamlscript: |
     !yamlscript/v0
-    println: >-
+    println:: >-
       foo
   clojure: |
     (println "foo")
@@ -72,7 +72,7 @@
     !yamlscript/v0
     (a + "-" + b)
   clojure: |
-    (_+ a "-" b)
+    (add+ a "-" b)
 
 
 - name: String repeat operator
@@ -80,9 +80,9 @@
     !yamlscript/v0
     ("foo" * 3)
   transform: |
-    {:Lst [{:Sym _*} {:Str "foo"} {:Int 3}]}
+    {:Lst [{:Sym mul+} {:Str "foo"} {:Int 3}]}
   clojure: |
-    (_* "foo" 3)
+    (mul+ "foo" 3)
 
 
 - name: Nested mappings
@@ -91,7 +91,7 @@
     foo:
       bar: baz
   resolve: |
-    {:pairs [{:exp "foo"} {:pairs [{:exp "bar"} {:exp "baz"}]}]}
+    {:xmap [{:expr "foo"} {:xmap [{:expr "bar"} {:expr "baz"}]}]}
   clojure: |
     (foo (bar baz))
 
@@ -102,6 +102,14 @@
     say: "Hello $name $(inc 41) $dec(43)!"
   clojure: |
     (say (str "Hello " name " " (inc 41) " " (dec 43) "!"))
+
+
+- name: String interpolation followed by a word
+  yamlscript: |
+    !yamlscript/v0
+    say: "Hello${name}world"
+  clojure: |
+    (say (str "Hello" name "world"))
 
 
 - name: Multi-line string interpolation
@@ -132,7 +140,7 @@
   clojure: |
     (defn main [name] (say (str "Hello " name)))
     (def x 1)
-    (apply main ARGV)
+    (apply main ARGS)
 
 
 - name: The => operator
@@ -142,7 +150,7 @@
     =>: (x + 1)
   clojure: |
     (def x 41)
-    (_+ x 1)
+    (add+ x 1)
 
 
 - name: (a + b + c) -> (+ a b c)
@@ -150,7 +158,7 @@
     !yamlscript/v0
     =>: (a + b + c)
   clojure: |
-    (_+ a b c)
+    (add+ a b c)
 
 
 - name: Pre-declare top level functions as needed
@@ -203,7 +211,7 @@
     !yamlscript/v0
     =>: a + b
   clojure: |
-    (_+ a b)
+    (add+ a b)
 
 
 - name: Multiple same operators without parens
@@ -211,7 +219,7 @@
     !yamlscript/v0
     =>: a + b + c
   clojure: |
-    (_+ a b c)
+    (add+ a b c)
 
 
 - name: The => operator inside parens
@@ -230,10 +238,10 @@
       x =: y * x
       =>: x
   clojure: |
-    (defn foo [x] (let [y (_+ x 1) x (_* y x)] x))
+    (defn foo [x] (let [y (add+ x 1) x (mul+ y x)] x))
 
 
-- name: Multiple pairs in let
+- name: Multiple xmap in let
   yamlscript: |
     !yamlscript/v0
     defn foo(x):
@@ -242,7 +250,7 @@
       prn: x
       =>: x
   clojure: |
-    (defn foo [x] (let [y (_+ x 1)] (prn y) (prn x) x))
+    (defn foo [x] (let [y (add+ x 1)] (prn y) (prn x) x))
 
 
 - name: let in let
@@ -255,7 +263,10 @@
       prn: x
       =>: x
   clojure: |
-    (defn foo [x] (let [y (_+ x 1)] (prn y) (let [x (_* y x)] (prn x) x)))
+    (defn
+      foo
+      [x]
+      (let [y (add+ x 1)] (prn y) (let [x (mul+ y x)] (prn x) x)))
 
 
 - name: let not first in defn
@@ -267,7 +278,7 @@
       prn: y
       =>: x + y
   clojure: |
-    (defn foo [x] (prn x) (let [y (_+ x 1)] (prn y) (_+ x y)))
+    (defn foo [x] (prn x) (let [y (add+ x 1)] (prn y) (add+ x y)))
 
 
 - name: let over lambda
@@ -281,7 +292,7 @@
     say:
       lol(10): 4
   clojure: |
-    (defn lol [x] (let [y (_* 2 x)] (fn [& [_1]] (_+ _1 y))))
+    (defn lol [x] (let [y (mul+ 2 x)] (fn [& [_1]] (add+ _1 y))))
     (say ((lol 10) 4))
 
 
@@ -291,10 +302,7 @@
     defn increase(x n=1):
       =>: x + n
   clojure: |
-    (defn increase
-      ([x] (let [n 1] (increase x n)))
-      ([x n] (+ x n)))
-  SKIP: true
+    (defn increase ([x n] (add+ x n)) ([x] (increase x 1)))
 
 
 - name: Call main when program has one top level (defn main ...) form
@@ -304,7 +312,7 @@
       say: "Hello World"
   clojure: |
     (defn main [] (say "Hello World"))
-    (apply main ARGV)
+    (apply main ARGS)
 
 
 - name: Interpolate variable with - in it
@@ -333,16 +341,16 @@
     !yamlscript/v0
     foo =: \(%1 + %4)
   build: |
-   {:pairs
+   {:xmap
     ([{:Sym def} {:Sym foo}]
      {:Lst
       [{:Sym fn}
        {:Vec
         [{:Sym &}
          {:Vec [{:Sym _1} {:Sym _} {:Sym _} {:Sym _4}]}]}
-       {:Lst [{:Sym +} {:Sym _1} {:Sym _4}]}]})}
+       {:Lst [{:Sym add+} {:Sym _1} {:Sym _4}]}]})}
   clojure: |
-    (def foo (fn [& [_1 _ _ _4]] (_+ _1 _4)))
+    (def foo (fn [& [_1 _ _ _4]] (add+ _1 _4)))
 
 
 - name: Anonymous function 2
@@ -350,19 +358,19 @@
     !yamlscript/v0
     map: \(str ((%1 / %3) + %2)) (1 .. 3)
   clojure: |
-    (map (fn [& [_1 _2 _3]] (str (_+ (/ _1 _3) _2))) (rng 1 3))
+    (map (fn [& [_1 _2 _3]] (str (add+ (div+ _1 _3) _2))) (rng 1 3))
 
 
-- name: Default mapping semantic is a list of pairs
+- name: Default mapping semantic is a list of xmap
   yamlscript: |
     !yamlscript/v0
     a:
       b c: d
       e: f g
   build: |
-    {:pairs
+    {:xmap
      ({:Sym a}
-      {:pairs
+      {:xmap
        ([{:Sym b} {:Sym c}]
         {:Sym d}
         {:Sym e}
@@ -400,15 +408,15 @@
             \(line width, %1): (width..1)
   clojure: |
     (defn
-     tree
-     [width]
-     (let
-      [stars
-       (fn [& [_1]] (_* (inc _1) "*"))
-       spaces
-       (fn [& [_1]] (_* _1 " "))
-       top
-       (join (map ((fn [& [_1]] (line width _1)) (rng width 1))))]))
+      tree
+      [width]
+      (let
+       [stars
+        (fn [& [_1]] (mul+ (inc _1) "*"))
+        spaces
+        (fn [& [_1]] (mul+ _1 " "))
+        top
+        (join (map ((fn [& [_1]] (line width _1)) (rng width 1))))]))
 
 
 - name: Star operator in anonymous function
@@ -416,7 +424,7 @@
     !yamlscript/v0
     say: \(inc(%1) * 2)
   clojure: |
-    (say (fn [& [_1]] (_* (inc _1) 2)))
+    (say (fn [& [_1]] (mul+ (inc _1) 2)))
 
 
 - name: Function call symbol ends with ?
@@ -427,12 +435,59 @@
     (a? b)
 
 
-- name: Chained path lookup
+- name: Dot path access
   yamlscript: |
     !yamlscript/v0
-    =>: a.5."x y".z
+    =>: a.5.6.b."c d".'e f'.g(h).i().:j
+  build: |
+    {:xmap
+     [{:Sym =>}
+      {:dot
+       [{:Sym a}
+        {:Int 5}
+        {:Int 6}
+        {:QSym b}
+        {:Str "c d"}
+        {:Str "e f"}
+        {:Lst [{:Sym g} {:Sym h}]}
+        {:Lst [{:Sym i}]}
+        {:Key :j}]}]}
+     [{:Sym =>}
+      {:dot
+       [{:Sym a}
+        {:Int 5}
+        {:Int 6}
+        {:Lst [{:Sym quote} {:Sym b}]}
+        {:Str "c d"}
+        {:Str "e f"}
+        {:Lst [{:Sym g} {:Sym h}]}
+        {:Lst [{:Sym i}]}
+        {:Key :j}]}]}
+  transform: |
+    {:xmap
+     [{:Sym =>}
+      {:Lst
+       [{:Key :j}
+        {:Lst
+         [{:Sym i}
+          {:Lst
+           [{:Sym g}
+            {:Lst
+             [{:Sym get}
+              {:Lst
+               [{:Sym get}
+                {:Lst
+                 [{:Sym get+}
+                  {:Lst
+                   [{:Sym get+}
+                    {:Lst [{:Sym get+} {:Sym a} {:Int 5}]}
+                    {:Int 6}]}
+                  {:QSym b}]}
+                {:Str "c d"}]}
+              {:Str "e f"}]}
+            {:Sym h}]}]}]}]}
   clojure: |
-    (__ a 5 "x y" "z")
+    (:j (i (g (get (get (get+ (get+ (get+ a 5) 6) 'b) "c d") "e f") h)))
 
 
 - name: Switching to data mode
@@ -443,7 +498,7 @@
       foo: ! d.bar
   clojure: |
     (def d (load "data.yaml"))
-    {"foo" (__ d "bar")}
+    {"foo" (get+ d 'bar)}
 
 
 - name: Switching to data mode with '::'
@@ -454,7 +509,7 @@
       foo:: d.bar
   clojure: |
     (def d (load "data.yaml"))
-    {"foo" (__ d "bar")}
+    {"foo" (get+ d 'bar)}
 
 
 - name: Switch modes with '::' for def/let '=::'
@@ -495,55 +550,67 @@
   yamlscript: |
     !yamlscript/v0
     defn foo():
-      =>: "This is a doc string"
+      :: This is a doc string
       say: "Hello World"
   build: |
-    {:pairs
+    {:xmap
      [[{:Sym defn} {:Sym foo} {:Str "This is a doc string"} {:Vec []}]
-      {:pairs ({:Sym say} {:Str "Hello World"})}]}
+      {:xmap ({:Sym say} {:Str "Hello World"})}]}
   clojure: |
     (defn foo "This is a doc string" [] (say "Hello World"))
 
 
-- name: Support doc string as key
+- name: Quoted doc string
   yamlscript: |
     !yamlscript/v0
     defn foo():
-      "This is a doc string":
+      :: "This is a doc string"
       say: "Hello World"
   clojure: |
     (defn foo "This is a doc string" [] (say "Hello World"))
+
+
+- name: Literal doc string
+  yamlscript: |
+    !yamlscript/v0
+    defn foo():
+      :: |
+        This is
+        a doc string
+      say: "Hello World"
+  clojure: |
+    (defn foo "This is\na doc string\n" [] (say "Hello World"))
 
 
 - name: Error on `a+b`
   yamlscript: |
     !yamlscript/v0
     =>: a+b
-  error: |-
+  error: |
     Invalid symbol: 'a+b'
 
 
 - name: Underscore not allowed in symbol - A
   yamlscript: |
     !yamlscript/v0
-    =>: (a _+ b)
-  error: |-
-    Invalid symbol: '_+'
+    =>: (a +_ b)
+  error: |
+    Invalid symbol: '+_'
 
 
 - name: Underscore not allowed in symbol - B
   yamlscript: |
     !yamlscript/v0
-    =>: (_+ a b)
-  error: |-
-    Invalid symbol: '_+'
+    =>: (+_ a b)
+  error: |
+    Invalid symbol: '+_'
 
 
 - name: Underscore not allowed in symbol - C
   yamlscript: |
     !yamlscript/v0
     =>: (a + b_c)
-  error: |-
+  error: |
     Invalid symbol: 'b_c'
 
 
@@ -569,18 +636,18 @@
     cond:
       (a > b): c
       (a < d): e
-      =>: f
+      else: f
   clojure: |
-    (cond (> a b) c (< a d) e true f)
+    (cond (> a b) c (< a d) e :else f)
 
 
 - name: Single quoted string
   yamlscript: |
     !yamlscript/v0
-    say: ."123" + ' let''s go'
+    say: -"123" + ' let''s go'
     say: '123 let''s go'
   clojure: |
-    (say (_+ "123" " let's go"))
+    (say (add+ "123" " let's go"))
     (say "123 let's go")
 
 
@@ -602,23 +669,23 @@
     !yamlscript/v0
     =>: 3 * "hi $name\n"
   clojure: |
-    (_* 3 (str "hi " name "\n"))
+    (mul+ 3 (str "hi " name "\n"))
 
 
 - name: Interpolated path lookup
   yamlscript: |
     !yamlscript/v0
-    =>: "Hi $(ARGV.0)!!"
+    =>: "Hi $(ARGS.0)!!"
   clojure: |
-    (str "Hi " (__ ARGV 0) "!!")
+    (str "Hi " (get+ ARGS 0) "!!")
 
 
-- name: Floatings point numbers
+- name: Floating point numbers
   yamlscript: |
     !yamlscript/v0
-    =>: .[ 0. 0.1 -1.2e3 2.3e-4 ]
+    =>: -[ -00.00 0.1 -1.2e3 2.3e-4 ]
   clojure: |
-    [0.0 0.1 -1200.0 2.3E-4]
+    [-0.0 0.1 -1200.0 2.3E-4]
 
 
 - name: Exponentiation operator
@@ -629,3 +696,919 @@
   clojure: |
     (pow a b)
     (pow (pow a b) c)
+
+
+- name: Form indicator
+  yamlscript: |
+    !yamlscript/v0
+    a: b
+    c |: d()
+    e: f
+  clojure: |
+    (a b)
+    c
+    (d)
+    (e f)
+
+
+- name: Single underscore as a symbol
+  yamlscript: |
+    !yamlscript/v0
+    defn foo(a _ b):
+      =>: a + b
+  clojure: |
+    (defn foo [a _ b] (add+ a b))
+
+
+- name: Invalid symbol '_->'
+  yamlscript: |
+    !yamlscript/v0
+    _->: 2
+  error: |
+    ~~ Invalid symbol: '_->'
+
+
+- name: Destructuring let
+  yamlscript: |
+    !yamlscript/v0
+    defn foo():
+      -[a b c] =: -[1 2 3]
+      -{:d d :e e} =: -{:d 4 :e 5}
+      =>: a + b + c
+  clojure: |
+    (defn
+      foo
+      []
+      (let [[a b c] [1 2 3] {:d d, :e e} {:d 4, :e 5}] (add+ a b c)))
+
+
+- name: Destructuring def
+  yamlscript: |
+    !yamlscript/v0
+    -[a b c] =: -[1 2 3]
+  clojure: |
+    (+def [a b c] [1 2 3])
+
+
+- name: Multi-arity defn
+  yamlscript: |
+    !yamlscript/v0
+    defn foo:
+      (): 0
+      (a): a
+      (a b): a + b
+  clojure: |
+    (defn foo ([] 0) ([a] a) ([a b] (add+ a b)))
+
+
+- name: Constructing a mapping with code mode
+  yamlscript: |
+    !yamlscript/v0/data
+    a::
+      b: c
+  construct: |
+    {:Top [{:Map [{:Str "a"} {:Lst [{:Sym b} {:Sym c}]}]}]}
+  clojure: |
+    {"a" (b c)}
+
+
+- name: Constructing a sequence with code mode
+  yamlscript: |
+    !yamlscript/v0/data
+    - !
+      a: b c
+  construct: |
+    {:Top [{:Vec [{:Lst [{:Sym a} {:Sym b} {:Sym c}]}]}]}
+  clojure: |
+    [(a b c)]
+
+
+- name: Invalid number A
+  yamlscript: |
+    !yamlscript/v0
+    =>: 1.2.3
+  error: |
+    ~~ Invalid number: 1.2.3
+
+
+- name: Invalid number B
+  yamlscript: |
+    !yamlscript/v0
+    =>: -3/5
+#    =>: -3.foo.5
+  error: |
+    ~~ Invalid number: -3/5
+#    ~~ Invalid number: -3.foo.5
+
+
+- name: Dot grouping in sub-expression
+  yamlscript: |
+    !yamlscript/v0
+    =>: a.3.b + c.4.d
+  clojure: |
+    (add+ (get+ (get+ a 3) 'b) (get+ (get+ c 4) 'd))
+
+
+- name: Dot grouping in dot path
+  yamlscript: |
+    !yamlscript/v0
+    =>: a.3.b(c.4.d)
+  clojure: |
+    (b (get+ a 3) (get+ (get+ c 4) 'd))
+
+
+- name: Dot grouping in if statement
+  yamlscript: |
+    !yamlscript/v0
+    if a.b: c.d * 3
+  clojure: |
+    (if (get+ a 'b) (mul+ (get+ c 'd) 3))
+
+
+- name: Yes expression in sym-paren form
+  yamlscript: |
+    !yamlscript/v0
+    =>: a(b * c)
+  clojure: |
+    (a (mul+ b c))
+
+
+- name: Dot groupings in vectors
+  yamlscript: |
+    !yamlscript/v0
+    =>: -[a.3.b(x.y), c.4.d]
+  clojure: |
+    [(b (get+ a 3) (get+ x 'y)) (get+ (get+ c 4) 'd)]
+
+
+- name: Fully qualified symbol with paren
+  yamlscript: |
+    !yamlscript/v0
+    =>: a::b/c(d)
+  clojure: |
+    (a.b/c d)
+
+
+- name: Dot with var lookup
+  yamlscript: |
+    !yamlscript/v0
+    =>: a.b.$c.d(e)
+  clojure: |
+    (d (get+ (get+ a 'b) c) e)
+
+
+- name: Multiple document stream
+  yamlscript: |
+    foo: 42
+    --- !yamlscript/v0
+    =>::
+      bar:: stream():last.foo:inc
+      foo: 123
+    ---
+    bar: 44
+  clojure: |
+    {"foo" 42}
+    {"bar" (inc (get+ (last (stream)) 'foo)), "foo" 123}
+    {"bar" 44}
+
+
+- name: Dot escaping of YAML syntax
+  yamlscript: |
+    !yamlscript/v0
+    =>: -'foo' * 3
+    =>: -"foo" * 3
+    =>: -[foo] + [bar]
+    =>: -{foo 1} + {bar 2}
+    foo: .|| bar
+  clojure: |
+    (mul+ "foo" 3)
+    (mul+ "foo" 3)
+    (add+ [foo] [bar])
+    (add+ {foo 1} {bar 2})
+    (foo || bar)
+
+
+- name: Plus escaping of YAML syntax
+  yamlscript: |
+    !yamlscript/v0
+    =>: -'foo' * 3
+    =>: -"foo" * 3
+    =>: -[foo] + [bar]
+    =>: -{foo 1} + {bar 2}
+    foo: +|| bar
+  clojure: |
+    (mul+ "foo" 3)
+    (mul+ "foo" 3)
+    (add+ [foo] [bar])
+    (add+ {foo 1} {bar 2})
+    (foo || bar)
+
+
+- name: Plus escaping of YAML syntax
+  yamlscript: |
+    !yamlscript/v0
+    =>: -'foo' * 3
+    =>: -"foo" * 3
+    =>: -[foo] + [bar]
+    =>: -{foo 1} + {bar 2}
+    foo: +|| bar
+  clojure: |
+    (mul+ "foo" 3)
+    (mul+ "foo" 3)
+    (add+ [foo] [bar])
+    (add+ {foo 1} {bar 2})
+    (foo || bar)
+
+
+- name: Star in the middle
+  yamlscript: |
+    !yamlscript/v0
+    =>: a * b
+    =>: a(* b)
+  clojure: |
+    (mul+ a b)
+    (a * b)
+
+
+- name: Quote escaping
+  yamlscript: |
+    !yamlscript/v0
+    =>: \'(1 2 3)
+    =>: \'foo
+  clojure: |
+    '(1 2 3)
+    'foo
+
+
+- name: Char escaping
+  yamlscript: |
+    !yamlscript/v0
+    =>: \'( \\a \\5 \\newline \\tab )
+  clojure: |
+    '(\a \5 \newline \tab)
+
+
+- name: Deref with @
+  yamlscript: |
+    !yamlscript/v0
+    =>: .@foo
+    =>: ~foo
+  clojure: |
+    @foo
+    ~foo
+
+
+- name: Allowable symbols
+  yamlscript: |
+    !yamlscript/v0
+    say: a a-b a-b-c
+    say: a? a-b? a! a-b!
+  clojure: |
+    (say a a-b a-b-c)
+    (say a? a-b? a! a-b!)
+
+
+- name: Splats in function calls 1
+  yamlscript: |
+    !yamlscript/v0
+    =>: a(b*)
+  clojure: |
+    (apply a b)
+
+
+- name: Splats in function calls 2
+  yamlscript: |
+    !yamlscript/v0
+    =>: a(b c*)
+  clojure: |
+    (apply a b c)
+
+
+- name: Splats in function calls 3
+  yamlscript: |
+    !yamlscript/v0
+    =>: a(b c* d)
+  clojure: |
+    (apply a b (concat c [d]))
+
+
+- name: Splats in function calls 3
+  yamlscript: |
+    !yamlscript/v0
+    =>: a(b* c d e* f*)
+  clojure: |
+    (apply a (concat b [c] [d] e f))
+
+
+- name: Splats in pair expressions
+  yamlscript: |
+    !yamlscript/v0
+    foo: bar* baz
+  clojure: |
+    (apply foo (concat bar [baz]))
+
+
+- name: String escapes
+  yamlscript: |
+    rgx: |
+      ^v([0-9]+\.[0-9]+\.[0-9]+)$
+  clojure: |
+    {"rgx" "^v([0-9]+\\.[0-9]+\\.[0-9]+)$\n"}
+
+
+- name: Dot dwim args functions
+  yamlscript: |
+    !yamlscript/v0
+    =>: x.drop(3 _).take(5).nth(3)
+  clojure: |
+    (+nth (+take (drop 3 x) 5) 3)
+
+
+- name: Bug fix for bare '$' in literal with interpolation
+  yamlscript: |
+    !yamlscript/v0
+    say: |
+      $ $x
+      $ $y
+  clojure: |
+    (say (str "$ " x "\n$ " y "\n"))
+
+
+- name: Support for let operators
+  yamlscript: |
+    !yamlscript/v0
+    defn a():
+      x =: nil
+      b ||=: 1
+      c +=: 2
+      d *=: 3
+      e -=: 4
+      f /=: 5
+      =>: b + c + d + e + f
+  clojure: |
+    (defn
+      a
+      []
+      (let
+       [x nil b (or b 1) c (add+ c 2) d (mul+ d 3) e (- e 4) f (div+ f 5)]
+       (add+ b c d e f)))
+
+
+- name: Support the `.=` let operator
+  yamlscript: |
+    !yamlscript/v0
+    defn a():
+      b .=: c
+      b .=: c.d
+      b .=: c.d(e).3.$f.:g.h()
+  clojure: |
+    (defn
+      a
+      []
+      (let
+       [b
+        (get+ b 'c)
+        b
+        (get+ (get+ b 'c) 'd)
+        b
+        (h (:g (get+ (get+ (d (get+ b 'c) e) 3) f)))]))
+
+
+- name: Support ops with def (like let)
+  yamlscript: |
+    !yamlscript/v0
+    a =: 1
+    a +=: 2
+    a .=: b
+    a .=: c.d(e)
+  clojure: |
+    (def a 1)
+    (def a (add+ a 2))
+    (def a (get+ a 'b))
+    (def a (d (get+ a 'c) e))
+
+
+- name: Dot op when first arg is function call
+  yamlscript: |
+    !yamlscript/v0
+    defn a():
+      b .=: c()
+      b .=: c(d).e
+      :: 42
+  clojure: |
+    (defn a [] (let [b (c b) b (get+ (c b d) 'e)] (42)))
+
+
+- name: Dot op when first arg is function with _
+  yamlscript: |
+    !yamlscript/v0
+    defn a():
+      b .=: drop(c _)
+      b .=: drop(c)
+      :: 42
+  clojure: |
+    (defn a [] (let [b (drop c b) b (+drop b c)] (42)))
+
+
+- name: Loop without bindings
+  yamlscript: |
+    !yamlscript/v0
+    a =:
+      loop:
+        a =: read-line()
+        if empty?(a):
+          recur()
+          a
+  clojure: |
+    (def a (loop [] (let [a (read-line)] (if (empty? a) (recur) a))))
+
+
+- name: Allow catch with no arguments
+  yamlscript: |
+    !yamlscript/v0
+    try:
+      1:
+      catch:
+        (println "Error")
+  clojure: |
+    (try (1) (catch Exception _e (println "Error")))
+
+
+- name: Allow catch with one argument
+  yamlscript: |
+    !yamlscript/v0
+    try:
+      1:
+      catch err:
+        (println "Error")
+  clojure: |
+    (try (1) (catch Exception err (println "Error")))
+
+
+- name: Allow underscores in symbols in dot chains
+  yamlscript: |
+    !yamlscript/v0
+    when ENV.FOO_BAR:
+      x: y
+  build: |
+    {:xmap
+     [[{:Sym when} {:dot [{:Sym ENV} {:QSym FOO_BAR}]}]
+      {:xmap [{:Sym x} {:Sym y}]}]}
+  clojure: |
+    (when (get+ ENV 'FOO_BAR) (x y))
+
+
+- name: Support .> debugging operator
+  yamlscript: |
+    !yamlscript/v0
+    =>: foo.>.bar
+  clojure: |
+    (get+ (clojure.core/DBG foo) 'bar)
+
+- name: Error Clojure style comments
+  yamlscript: |
+    !yamlscript/v0
+    =>: 42          ;; This is not a comment :(
+  error: |
+    ~~ This is not a comment
+
+
+- name: Error on folded scalars in code mode
+  yamlscript: |
+    !yamlscript/v0
+    =>: >
+      42
+  error: |
+    ~~ Folded scalars not allowed in code mode
+
+
+- name: Double quoted strings with capture group vars
+  yamlscript: |
+    !yamlscript/v0
+    =>: "$1 $foo $2"
+    =>: -"$1$foo$2"
+  clojure: |
+    (str "$1 " foo " $2")
+    (str "$1" foo "$2")
+
+
+- name: Inline comments
+  yamlscript: |
+    !yamlscript/v0
+    say: text
+      .foo   \"get foo"
+      .bar   \"get bar"
+      .baz   \"get baz"
+  clojure: |
+    (say (get+ (get+ (get+ text 'foo) 'bar) 'baz))
+
+
+- name: Inline comments in parenthesized expression
+  yamlscript: |
+    !yamlscript/v0
+    (1 + \"Inline comment" 2)
+  clojure: |
+    (add+ 1 2)
+
+
+- name: Escape pound and colon in ysexpr strings
+  yamlscript: |
+    !yamlscript/v0
+    say: -'foo \# bar :\ baz'
+    say: -"foo \# bar :\ baz"
+  clojure: |
+    (say "foo # bar : baz")
+    (say "foo # bar : baz")
+
+
+- name: Define functions with unnamed variable args
+  yamlscript: |
+    !yamlscript/v0
+    defn foo(*): nil
+    defn bar(*xs): nil
+    defn baz(a b *xs): nil
+    defn boo(a b *): nil
+  clojure: |
+    (defn foo [& _] nil)
+    (defn bar [& xs] nil)
+    (defn baz [a b & xs] nil)
+    (defn boo [a b & _] nil)
+
+
+- name: Variable and default args in function definitions
+  yamlscript: |
+    !yamlscript/v0
+    defn foo(a b=1 *c): nil
+  clojure: |
+    (defn foo ([a b & c] nil) ([a] (foo a 1)))
+
+
+- name: Multi-arity defn with variable args
+  yamlscript: |
+    !yamlscript/v0
+    defn add:
+      (): 0
+      (x): x
+      (x y): x + y
+      (x y *xs): reduce(add (add x y) xs)
+  clojure: |
+    (defn
+      add
+      ([] 0)
+      ([x] x)
+      ([x y] (add+ x y))
+      ([x y & xs] (reduce add (add x y) xs)))
+
+
+- name: Define a private function
+  yamlscript: |
+    !yamlscript/v0
+    defn- foo(): nil
+  clojure: |
+    (defn- foo [] nil)
+
+
+- name: Check case compiles like cond
+  yamlscript: |
+    !yamlscript/v0
+    case x:
+      1: a
+      2: b
+      3: c
+      else: d
+  clojure: |
+    (case x 1 a 2 b 3 c d)
+
+
+- name: Arg swap using underscore
+  yamlscript: |
+    !yamlscript/v0
+    reduce _ [] (1 .. 10):
+      fn(a b):
+        conj a: b * 10
+  clojure: |
+    (reduce (fn [a b] (conj a (mul+ b 10))) [] (rng 1 10))
+
+
+- name: Form with dot on LHS
+  yamlscript: |
+    !yamlscript/v0
+    foo .: bar
+    foo.: bar()
+    foo.: bar.baz
+    foo : .bar
+    foo: .bar()
+    foo: .bar.baz
+  clojure: |
+    (get+ foo 'bar)
+    (bar foo)
+    (get+ (get+ foo 'bar) 'baz)
+    (get+ foo 'bar)
+    (bar foo)
+    (get+ (get+ foo 'bar) 'baz)
+
+
+- name: Dot chain call with splat
+  yamlscript: |
+    !yamlscript/v0
+    =>: (1 .. 10).bar(*)
+    =>: foo.bar.baz(*)
+  clojure: |
+    (apply bar (rng 1 10))
+    (apply baz (get+ foo 'bar))
+
+
+- name: YeS expression over a pair
+  yamlscript: |
+    !yamlscript/v0
+    foo +: bar.baz
+    a ||: b &&& c
+  clojure: |
+    (add+ foo (get+ bar 'baz))
+    (or a (and? b c))
+
+
+- name: Support .? truey operator
+  yamlscript: |
+    !yamlscript/v0
+    if foo.?: bar
+  clojure: |
+    (if (ys.std/truey? foo) bar)
+
+
+- name: Support .# count operator
+  yamlscript: |
+    !yamlscript/v0
+    if foo.#: bar
+  clojure: |
+    (if (clojure.core/count foo) bar)
+
+
+- name: Support parenthesized .# count operator
+  yamlscript: |
+    !yamlscript/v0
+    if (foo.# == 3): bar
+    if foo.# == 3: bar
+    if (== foo.# 3): bar
+  clojure: |
+    (if (= (clojure.core/count foo) 3) bar)
+    (if (= (clojure.core/count foo) 3) bar)
+    (if (= (clojure.core/count foo) 3) bar)
+
+
+- name: Use _ for %1 in anonymous function
+  yamlscript: |
+    !yamlscript/v0
+    =>: \(add(_ 1) 2)
+    =>: \(%2 + _ + _ + %1)
+  clojure: |
+    (fn [& [_1]] ((add _1 1) 2))
+    (fn [& [_1 _2]] (add+ _2 _1 _1 _1))
+
+
+- name: Support .-- .++ operators
+  yamlscript: |
+    !yamlscript/v0
+    when a.-- > b.++: c
+  clojure: |
+    (when (> (ys.std/dec+ a) (ys.std/inc+ b)) c)
+
+
+- name: Anonymous function with only a regex
+  yamlscript: |
+    !yamlscript/v0
+    a.map(\(/.../))
+  clojure: |
+    (+map a (fn [& [_1]] (re-find #"..." _1)))
+
+
+- name: Support slurp arg in fn
+  yamlscript: |
+    !yamlscript/v0
+    a =:
+      fn(*args): nil
+    b =:
+      fn(*): nil
+    c =:
+      fn c(*): nil
+  clojure: |
+    (def a (fn [& args] nil))
+    (def b (fn [& _] nil))
+    (def c (fn c [& _] nil))
+
+
+- name: YeS in LHS or YeS pair
+  yamlscript: |
+    !yamlscript/v0
+    a && b ||: c
+  clojure: |
+    (or (and a b) c)
+
+
+- name: YeS in LHS or YeS pair w/ map on RHS
+  yamlscript: |
+    !yamlscript/v0
+    a && b ||:
+      c: d
+  clojure: |
+    (or (and a b) (c d))
+
+
+- name: Seq destruct without []
+  yamlscript: |
+    !yamlscript/v0
+    a b c =: -[1 2 3]
+  clojure: |
+    (+def [a b c] [1 2 3])
+
+
+- name: Colon chain calls
+  yamlscript: |
+    !yamlscript/v0
+    =>: a:b
+    =>: a.b:c
+    =>: a.b.:c:d
+    =>: a.5:b
+    =>: a(5):b
+    =>: -{}:a
+    =>: -[]:a
+    =>: a:b?
+    =>: a:b!
+    =>: a:b+
+    =>: a:b/c
+    =>: a:b/c:d
+    =>: a.++:b
+    =>: a.--:b
+    =>: a.#:b
+  clojure: |
+    (b a)
+    (c (get+ a 'b))
+    (d (:c (get+ a 'b)))
+    (b (get+ a 5))
+    (b (a 5))
+    (a {})
+    (a [])
+    (b? a)
+    (b! a)
+    (b+ a)
+    (b/c a)
+    (d (b/c a))
+    (b (ys.std/inc+ a))
+    (b (ys.std/dec+ a))
+    (b (clojure.core/count a))
+
+
+- name: Bare mode tags
+  yamlscript: |
+    - !!map
+      foo: bar
+    - !!seq
+      - 1
+      - 2
+    - !!str 42
+    - !!int "42"
+    - !!float '42'
+    - !!bool |-
+      true
+    - !!null ''
+  resolve: |
+    {:seq
+     ({:map [{:str "foo"} {:str "bar"}]}
+      {:seq ({:int "1"} {:int "2"})}
+      {:str "42"}
+      {:int "42"}
+      {:flt "42"}
+      {:bln "true"}
+      {:nil ""})}
+  clojure: |
+    [{"foo" "bar"} [1 2] "42" 42 42.0 true nil]
+
+
+- name: Bare mode tag error for !!map
+  yamlscript: |
+    - !!map 42
+  error: |
+    Invalid tag for bare mode scalar: !!map
+
+- name: Bare mode tag error for !!map
+  yamlscript: |
+    - !!map []
+  error: |
+    Invalid tag for bare mode sequence: !!map
+
+- name: Bare mode tag error for !!bool
+  yamlscript: |
+    - !!bool []
+  error: |
+    Invalid tag for bare mode sequence: !!bool
+
+- name: Bare mode tag error for !!bool
+  yamlscript: |
+    - !!bool tRUE
+  error: |
+    Invalid value for bare mode scalar with tag !!bool: 'tRUE'
+
+- name: Tag !data in code mode
+  yamlscript: |
+    !yamlscript/v0
+    =>: !data
+      foo: bar
+  clojure: |
+    {"foo" "bar"}
+
+
+- name: Tag !code in data mode
+  yamlscript: |
+    !yamlscript/v0/data
+    - !code
+      foo: bar
+  clojure: |
+    [(foo bar)]
+
+
+- name: Method tag in code mode
+  yamlscript: |
+    !yamlscript/v0
+    a =: !:WWW
+      inc: 41
+    b =: !:WWW 42
+
+  resolve: |
+    {:xmap
+     [{:def "a ="}
+      {:xmap [{:expr "inc"} {:expr "41"}], :! ":WWW"}
+      {:def "b ="}
+      {:expr "42", :! ":WWW"}]}
+  clojure: |
+    (def a (WWW (inc 41)))
+    (def b (WWW 42))
+
+
+- name: Merge key in data mode
+  yamlscript: |
+    !yamlscript/v0/data
+    <<:: -[{:a 1 :b 2}]
+    :a: 3
+  clojure: |
+    (+merge {:-<< [{:a 1, :b 2}], :a 3})
+
+
+- name: Tag method call with data mode switch to data mode
+  yamlscript: |
+    !yamlscript/v0
+    array =: !:vec:
+    - 1
+    - 2
+    - 3
+    - 4
+  clojure: |
+    (def array (vec [1 2 3 4]))
+
+
+- name: Tag method call with data mode switch to code mode
+  yamlscript: |
+    !yamlscript/v0:
+    foo: !:merge: -[{:a 1 :b 2} {:a 3}]
+  clojure: |
+    {"foo" (merge [{:a 1, :b 2} {:a 3}])}
+
+
+- name: Conditional seq insertion in data mode
+  yamlscript: |
+    !yamlscript/v0:
+    - foo
+    - :when rand(2) > 1::
+      - bar
+    - baz
+  clojure: |
+    (concat ["foo"] (when (> (rand 2) 1) ["bar"]) ["baz"])
+
+
+- name: Fix bug in seq insertion in data mode
+  yamlscript: |
+    !yamlscript/v0:
+    - x: null
+  build: |
+    {:Vec [{:Map [{:Str "x"} {:Nil nil}]}]}
+  clojure: |
+    [{"x" nil}]
+
+
+- name: Conditional map insertion in data mode bug
+  yamlscript: |
+    !yamlscript/v0:
+    - foo: 1
+      :when x:: {bar: 2}
+      x: 3
+  clojure: |
+    [(merge {"foo" 1} (merge (when x {"bar" 2}) {"x" 3}))]
+
+
+- name: Tag function on let
+  yamlscript: |
+    !yamlscript/v0
+    defn xyz():
+      foo =: !:WWW
+        bar: 42
+  clojure: |
+    (defn xyz [] (let [foo (WWW (bar 42))]))
